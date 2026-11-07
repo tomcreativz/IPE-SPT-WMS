@@ -88,8 +88,8 @@ td.act{white-space:nowrap;text-align:right}
 .lines .lh{background:#fafafa;font-size:11.5px;text-transform:uppercase;color:var(--mut);font-weight:600}
 .lines .lr{border-top:1px solid #f0f1f3}
 .lines input{padding:7px 9px;border:1px solid #d1d5db;border-radius:6px;width:100%}
-.lines.tx .lh,.lines.tx .lr{grid-template-columns:1fr 90px 130px 32px}
-.lines.po .lh,.lines.po .lr{grid-template-columns:1fr 80px 120px 120px 32px}
+.lines.tx .lh,.lines.tx .lr{grid-template-columns:1fr 90px 210px 32px}
+.lines.po .lh,.lines.po .lr{grid-template-columns:1.6fr 80px 130px 1fr 32px}
 @media(max-width:700px){.grid{grid-template-columns:1fr}.f.s2{grid-column:span 1}.lines .lh{display:none}.lines.tx .lr,.lines.po .lr{grid-template-columns:1fr 1fr}}
 .err{color:var(--bad);font-size:12.5px;margin-top:10px;min-height:16px}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:99;align-items:center}
@@ -129,6 +129,11 @@ td.act{white-space:nowrap;text-align:right}
 <div id="toast"></div>
 <datalist id="plist"></datalist>
 <datalist id="catlist"></datalist>
+<datalist id="custlist"></datalist>
+<datalist id="srclist"></datalist>
+<datalist id="polist"></datalist>
+<datalist id="plantlist"></datalist>
+<datalist id="ekspList"></datalist>
 
 <script>
 /* ============ util ============ */
@@ -150,14 +155,14 @@ const S = { parts: [], movements: [], customers: [], suppliers: [], pos: [] };
 const loaded = {};
 let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
 let canWrite = false, canPO = false, isFull = false, loadFailed = false;
-let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map();
+let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
-const F = { parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
+const F = { all: { q: '', from: '', to: '', kind: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true }, parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
   kartu: { part: '', from: '', to: '' }, cust: { q: '' }, supp: { q: '' }, po: { q: '', st: '' } };
 
-const KIND_IN = [{ k: 'Penerimaan / Pembelian', p: 'supplier' }, { k: 'Retur dari Customer', p: 'customer' }, { k: 'Saldo Awal', p: null }, { k: 'Koreksi (+)', p: null }];
-const KIND_OUT = [{ k: 'Penjualan / Pengeluaran', p: 'customer', po: true }, { k: 'Retur ke Supplier', p: 'supplier' }, { k: 'Pemakaian Internal', p: null }, { k: 'Koreksi (-)', p: null }];
-const SALE = KIND_OUT[0].k;
+const IN_TYPES = ['IN', 'RETURN CUSTOMER', 'SALDO AWAL', 'KOREKSI (+)'];
+const OUT_TYPES = ['SOLD CUSTOMER', 'WH03 SERVICE', 'BUNDLING', 'IPE BJM', 'IPE SMD', 'IPE BPP', 'IPE PTK', 'IPE SBY', 'IPE JKT', 'IPE PKY', 'PART DAMAGE', 'PART RETURN', 'FUCHS', 'KOREKSI (-)'];
+const EKSP = ['YML', 'MJM', 'TIM SERVICE', 'TIM BC', 'TIM HO', 'TIM WH', 'DIJEMPUT', 'DIANTAR', 'DHL', 'FEDEX', 'J&T EXPRESS', 'J&T CARGO', 'JNE', 'TIKI', 'POS', 'LION PARCEL', 'DUTA CARGO', 'PANDU', 'PSM', 'PSSR', 'TRAVEL'];
 const CATS = ['Filter', 'Engine', 'Hidrolik', 'Transmisi', 'Undercarriage', 'Kelistrikan', 'Ground Engaging Tools', 'Seal & Gasket', 'Pelumas', 'Lain-lain'];
 
 function reindex() {
@@ -167,6 +172,19 @@ function reindex() {
   custMap = new Map(S.customers.map(p => [p.id, p]));
   suppMap = new Map(S.suppliers.map(p => [p.id, p]));
   poMap = new Map(S.pos.map(p => [p.id, p]));
+  delivIdx = new Map(); reqIdx = new Map();
+  for (const m of S.movements) {
+    const ref = String(m.poRef || poMap.get(m.poId)?.poNo || '').trim().toUpperCase(); if (!ref) continue;
+    const k = ref + '|' + m.partId; const T = m.dir === 'out' ? delivIdx : reqIdx; T.set(k, (T.get(k) || 0) + m.qty);
+  }
+  commit = new Map();
+  for (const po of S.pos) { if (po.status === 'batal') continue; const ref = String(po.poNo || '').trim().toUpperCase(); for (const it of po.items || []) { const sisa = Math.max(0, it.qty - (delivIdx.get(ref + '|' + it.partId) || 0)); if (sisa) commit.set(it.partId, (commit.get(it.partId) || 0) + sisa); } }
+  const optsOf = a => [...new Set(a.filter(Boolean))].map(v => `<option value="${esc(v)}"></option>`).join('');
+  $('#custlist').innerHTML = optsOf(S.customers.map(c => c.name).sort(byText));
+  $('#srclist').innerHTML = optsOf(['IPE SGP', ...S.suppliers.map(c => c.name).sort(byText)]);
+  $('#polist').innerHTML = optsOf(S.pos.filter(p => p.status !== 'batal').map(p => p.poNo));
+  $('#plantlist').innerHTML = optsOf([...S.customers.flatMap(c => String(c.plants || '').split(',').map(x => x.trim())), ...S.pos.map(p => p.plant)]);
+  $('#ekspList').innerHTML = optsOf(EKSP);
   const dl2 = $('#plist'); dl2.innerHTML = S.parts.slice().sort((a, b) => byText(a.partNo, b.partNo)).map(p => `<option value="${esc(partLabel(p))}"></option>`).join('');
   const cats = [...new Set([...CATS, ...S.parts.map(p => p.category).filter(Boolean)])];
   $('#catlist').innerHTML = cats.map(c => `<option value="${esc(c)}"></option>`).join('');
@@ -185,24 +203,32 @@ function partStatus(p) {
   return { k: 'Aman', c: 'ok' };
 }
 function partyName(m) {
+  if (m.party) return m.party;
   if (m.partyType === 'customer') return custMap.get(m.partyId)?.name || '';
   if (m.partyType === 'supplier') return suppMap.get(m.partyId)?.name || '';
   return '';
 }
-function poDelivered(po) {
-  const d = new Map();
-  for (const m of S.movements) if (m.poId === po.id && m.dir === 'out' && m.kind === SALE) d.set(m.partId, (d.get(m.partId) || 0) + m.qty);
-  return d;
-}
 function poInfo(po) {
-  const d = poDelivered(po);
-  let ord = 0, del = 0, val = 0, done = true;
-  for (const it of po.items || []) { ord += it.qty; const x = Math.min(d.get(it.partId) || 0, it.qty); del += x; val += it.qty * (it.price || 0); if ((d.get(it.partId) || 0) < it.qty) done = false; }
+  const ref = String(po.poNo || '').trim().toUpperCase();
+  const lines = (po.items || []).map(it => {
+    const key = ref + '|' + it.partId; const d = delivIdx.get(key) || 0, rq = reqIdx.get(key) || 0;
+    const sisa = Math.max(0, it.qty - d), stk = stock(it.partId), free = stk - (commit.get(it.partId) || 0);
+    let st;
+    if (po.status === 'batal') st = { k: 'Batal', c: 'gray' };
+    else if (sisa === 0) st = { k: 'Terkirim', c: 'ok' };
+    else if (it.ket === 'C' || free >= 0) st = { k: 'LENGKAP', c: 'ok' };
+    else st = { k: 'KURANG', c: 'bad' };
+    const kurang = st.k === 'KURANG' ? Math.min(sisa, -free) : 0;
+    return { ...it, d, sisa, stk, free, st, kurang, dv: sisa === 0 ? 'DELIVERED' : rq > 0 ? 'REQ DONE' : 'BELUM' };
+  });
+  let ord = 0, del = 0, val = 0;
+  for (const l of lines) { ord += l.qty; del += Math.min(l.d, l.qty); val += l.qty * (partMap.get(l.partId)?.price || 0); }
+  const short = lines.filter(l => l.st.k === 'KURANG').length;
   let st = { k: 'Terbuka', c: 'info' };
   if (po.status === 'batal') st = { k: 'Dibatalkan', c: 'gray' };
-  else if (done && ord > 0) st = { k: 'Selesai', c: 'ok' };
+  else if (lines.length && lines.every(l => l.sisa === 0)) st = { k: 'Selesai', c: 'ok' };
   else if (del > 0) st = { k: 'Sebagian', c: 'warn' };
-  return { d, ord, del, val, st, open: st.k === 'Terbuka' || st.k === 'Sebagian' };
+  return { lines, d: new Map(lines.map(l => [l.partId, l.d])), ord, del, val, short, st, open: st.k === 'Terbuka' || st.k === 'Sebagian' };
 }
 
 /* ============ csv / pdf ============ */
@@ -273,8 +299,10 @@ const nowISO = () => new Date().toISOString();
 const ROUTES = [
   ['dashboard', 'Dashboard', viewDashboard],
   ['spare-part', 'Database Spare Part', viewParts],
+  ['soh', 'SOH Bulanan', viewSOH],
   ['barang-masuk', 'Barang Masuk', () => viewMoves('in')],
   ['barang-keluar', 'Barang Keluar', () => viewMoves('out')],
+  ['part-in-out', 'Laporan Part In-Out', () => viewMoves('all')],
   ['kartu-stok', 'Kartu Stok', viewKartu],
   ['purchase-order', 'Purchase Order', viewPO],
   ['customer', 'Database Customer', viewCustomers],
@@ -330,7 +358,7 @@ function viewDashboard() {
       // 6 bulan terakhir
       const months = []; const d0 = new Date(); d0.setDate(1);
       for (let i = 5; i >= 0; i--) { const d = new Date(d0.getFullYear(), d0.getMonth() - i, 1); months.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, lb: d.toLocaleDateString('id-ID', { month: 'short' }), in: 0, out: 0 }); }
-      for (const m of S.movements) { const x = months.find(z => z.key === (m.date || '').slice(0, 7)); if (x && m.kind !== 'Saldo Awal') x[m.dir] += m.qty; }
+      for (const m of S.movements) { const x = months.find(z => z.key === (m.date || '').slice(0, 7)); if (x && !isOpening(m)) x[m.dir] += m.qty; }
       const mx = Math.max(1, ...months.map(m => Math.max(m.in, m.out)));
       const recent = S.movements.slice().sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1)).slice(0, 8);
       const emptyDb = !parts.length && loaded.parts;
@@ -360,6 +388,7 @@ function viewDashboard() {
   };
 }
 
+const mvDoc = o => ({ docNo: '', date: today(), partId: '', qty: 0, dir: 'in', kind: '', party: '', partyId: '', poRef: '', poId: '', ekspedisi: '', awb: '', note: '', by: uid, at: nowISO(), ...o });
 async function loadSample() {
   if (!canWrite) return denied();
   if (S.parts.length) { toast('Data contoh hanya bisa dimuat saat database spare part masih kosong.', 'err'); return; }
@@ -390,12 +419,13 @@ async function loadSample() {
     for (const p of P) {
       const r = await db.collection('parts').add({ partNo: p[0], name: p[1], category: p[2], model: p[3], unit: p[4], location: p[5], supplierId: sid[pid.length % 2], minStock: p[6], price: p[7], createdAt: t, createdBy: uid });
       pid.push(r.id);
-      if (p[8] > 0) await db.collection('movements').add({ docNo: 'SA-CONTOH', date: today(), partId: r.id, qty: p[8], dir: 'in', kind: 'Saldo Awal', partyType: '', partyId: '', poId: '', note: 'Saldo awal contoh', by: uid, at: t });
+      if (p[8] > 0) await db.collection('movements').add(mvDoc({ docNo: 'SA-CONTOH', partId: r.id, qty: p[8], dir: 'in', kind: 'SALDO AWAL', note: 'Saldo awal contoh' }));
     }
-    await db.collection('movements').add({ docNo: 'BM-CONTOH-01', date: today(), partId: pid[1], qty: 12, dir: 'in', kind: KIND_IN[0].k, partyType: 'supplier', partyId: sid[0], poId: '', note: 'Pengadaan contoh', by: uid, at: t });
-    const poRef = await db.collection('pos').add({ poNo: 'PO-CONTOH-001', customerId: cid[0], date: today(), needBy: '', note: 'PO contoh', status: 'aktif', items: [{ partId: pid[0], qty: 6, price: 205000 }, { partId: pid[5], qty: 10, price: 195000 }, { partId: pid[6], qty: 2, price: 3400000 }], createdAt: t, createdBy: uid });
-    await db.collection('movements').add({ docNo: 'BK-CONTOH-01', date: today(), partId: pid[0], qty: 6, dir: 'out', kind: SALE, partyType: 'customer', partyId: cid[0], poId: poRef.id, note: 'Pengiriman sebagian PO contoh', by: uid, at: t });
-    await db.collection('movements').add({ docNo: 'BK-CONTOH-02', date: today(), partId: pid[3], qty: 1, dir: 'out', kind: SALE, partyType: 'customer', partyId: cid[1], poId: '', note: 'Penjualan langsung contoh', by: uid, at: t });
+    await db.collection('movements').add(mvDoc({ docNo: 'BM-CONTOH-01', partId: pid[1], qty: 12, dir: 'in', kind: 'IN', party: 'IPE SGP', ekspedisi: 'YML', awb: 'RESI-CONTOH-1', note: 'Pengadaan contoh' }));
+    const poRef = await db.collection('pos').add({ poNo: 'PO-CONTOH-001', customerId: cid[0], plant: 'SERVICE', date: today(), note: 'PO contoh', status: 'aktif', items: [{ partId: pid[0], qty: 6, ket: '', req: '' }, { partId: pid[5], qty: 10, ket: '', req: '' }, { partId: pid[6], qty: 5, ket: '', req: 'butuh kirim cepat' }], createdAt: t, createdBy: uid });
+    await db.collection('movements').add(mvDoc({ docNo: 'BK-CONTOH-01', partId: pid[0], qty: 6, dir: 'out', kind: 'SOLD CUSTOMER', party: cus[0][0], partyId: cid[0], poRef: 'PO-CONTOH-001', poId: poRef.id, ekspedisi: 'MJM', note: 'Pengiriman sebagian PO contoh' }));
+    await db.collection('movements').add(mvDoc({ docNo: 'BK-CONTOH-02', partId: pid[3], qty: 1, dir: 'out', kind: 'SOLD CUSTOMER', party: cus[1][0], partyId: cid[1], ekspedisi: 'DIJEMPUT', note: 'Penjualan langsung contoh' }));
+    await db.collection('movements').add(mvDoc({ docNo: 'BK-CONTOH-03', partId: pid[5], qty: 4, dir: 'out', kind: 'BUNDLING', party: cus[2][0], partyId: cid[2], ekspedisi: 'TIM BC' }));
   });
   toast('Data contoh dimuat');
 }
@@ -459,6 +489,7 @@ function partForm(id) {
     ${fld('Nama *', 'name', { val: p.name || '', attrs: 'required' })}
     ${fld('Kategori', 'category', { val: p.category || '', list: 'catlist' })}
     ${fld('Model / Aplikasi alat', 'model', { val: p.model || '', ph: 'mis. 3CX, JS205' })}
+    ${fld('Supersession (part pengganti)', 'supersession', { val: p.supersession || '' })}
     ${fld('Satuan', 'unit', { val: p.unit || 'pcs' })}
     ${fld('Lokasi rak / bin', 'location', { val: p.location || '', ph: 'mis. A-01-2' })}
     ${fld('Supplier utama', 'supplierId', { val: p.supplierId || '', opts: [['', '— pilih —'], ...S.suppliers.slice().sort((a, b) => byText(a.name, b.name)).map(s => [s.id, s.name])] })}
@@ -475,12 +506,12 @@ function partForm(id) {
     const partNo = v.partNo.trim().toUpperCase();
     if (S.parts.some(x => x.id !== id && x.partNo.toUpperCase() === partNo)) { $('#perr', m.el).textContent = 'No. part sudah ada di database.'; return; }
     b.disabled = true;
-    const data = { partNo, name: v.name.trim(), category: v.category.trim(), model: v.model.trim(), unit: v.unit.trim() || 'pcs', location: v.location.trim(), supplierId: v.supplierId || '', minStock: +v.minStock || 0, price: +v.price || 0, updatedAt: nowISO() };
+    const data = { partNo, name: v.name.trim(), category: v.category.trim(), model: v.model.trim(), supersession: (v.supersession || '').trim(), unit: v.unit.trim() || 'pcs', location: v.location.trim(), supplierId: v.supplierId || '', minStock: +v.minStock || 0, price: +v.price || 0, updatedAt: nowISO() };
     const ok = await guarded(async () => {
       if (id) await db.doc('parts/' + id).update(data);
       else {
         const r = await db.collection('parts').add({ ...data, createdAt: nowISO(), createdBy: uid });
-        if (+v.opening > 0) await db.collection('movements').add({ docNo: 'SA-' + partNo, date: today(), partId: r.id, qty: +v.opening, dir: 'in', kind: 'Saldo Awal', partyType: '', partyId: '', poId: '', note: 'Stok awal', by: uid, at: nowISO() });
+        if (+v.opening > 0) await db.collection('movements').add({ docNo: 'SA-' + partNo, date: today(), partId: r.id, qty: +v.opening, dir: 'in', kind: 'SALDO AWAL', party: '', partyId: '', poRef: '', poId: '', ekspedisi: '', awb: '', note: 'Stok awal', by: uid, at: nowISO() });
       }
     });
     if (ok) { m.close(); toast('Spare part tersimpan'); } else b.disabled = false;
@@ -533,7 +564,7 @@ function importParts() {
       for (const it of items) {
         const ok = await guarded(async () => {
           const r = await db.collection('parts').add({ ...it.data, createdAt: nowISO(), createdBy: uid });
-          if (it.open > 0) await db.collection('movements').add({ docNo: 'SA-' + it.data.partNo, date: today(), partId: r.id, qty: it.open, dir: 'in', kind: 'Saldo Awal', partyType: '', partyId: '', poId: '', note: 'Stok awal (impor)', by: uid, at: nowISO() });
+          if (it.open > 0) await db.collection('movements').add({ docNo: 'SA-' + it.data.partNo, date: today(), partId: r.id, qty: it.open, dir: 'in', kind: 'SALDO AWAL', party: '', partyId: '', poRef: '', poId: '', ekspedisi: '', awb: '', note: 'Stok awal (impor)', by: uid, at: nowISO() });
         });
         if (!ok) break; n++; $('#prev', m.el).textContent = `Mengimpor… ${n}/${items.length}`;
       }
@@ -562,40 +593,48 @@ function importParts() {
   });
 }
 
-/* ============ BARANG MASUK / KELUAR ============ */
-function viewMoves(dir) {
-  const st = F[dir]; const kinds = dir === 'in' ? KIND_IN : KIND_OUT; let rows = [];
-  const label = dir === 'in' ? 'Barang Masuk' : 'Barang Keluar';
+/* ============ BARANG MASUK / KELUAR / PART IN-OUT ============ */
+const poText = m => m.poRef || poMap.get(m.poId)?.poNo || '';
+const isOpening = m => /saldo awal/i.test(m.kind || '');
+function viewMoves(mode) {
+  const st = F[mode]; let rows = [];
+  const kinds = mode === 'in' ? IN_TYPES : mode === 'out' ? OUT_TYPES : [...IN_TYPES, ...OUT_TYPES];
+  const label = mode === 'in' ? 'Barang Masuk' : mode === 'out' ? 'Barang Keluar' : 'Laporan Part In-Out';
   return {
     shell: `${ro()}${loadNoteHTML}
     <div class="bar">
-      <input type="search" id="q" placeholder="Cari no. dokumen, part, pihak…" value="${esc(st.q)}">
-      <select id="kind"><option value="">Semua jenis</option>${kinds.map(k => `<option ${st.kind === k.k ? 'selected' : ''}>${esc(k.k)}</option>`).join('')}</select>
+      <input type="search" id="q" placeholder="Cari part, no. dokumen, customer, PO, resi…" value="${esc(st.q)}">
+      <select id="kind"><option value="">Semua FORM/TO</option>${kinds.map(k => `<option ${st.kind === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>
       <label class="mut">Dari <input type="date" id="from" value="${st.from}"></label>
       <label class="mut">Sampai <input type="date" id="to" value="${st.to}"></label>
       <span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
-      ${canWrite ? `<button class="btn primary" data-act="add">+ ${label}</button>` : ''}
+      ${canWrite && mode !== 'out' ? '<button class="btn primary" data-act="addin">+ Barang Masuk</button>' : ''}${canWrite && mode !== 'in' ? '<button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { const k = { q: 'q', kind: 'kind', from: 'from', to: 'to' }[e.target.id]; if (k) { st[k] = e.target.value; this.fill(); } },
     act(a, id) {
-      if (a === 'add') openTx(dir);
-      if (a === 'csv') exportCSV(dir === 'in' ? 'barang-masuk' : 'barang-keluar', [['Tanggal', 'No. Dokumen', 'Jenis', 'No. Part', 'Nama Part', 'Qty', 'Satuan', dir === 'in' ? 'Supplier/Customer' : 'Customer/Supplier', 'No. PO', 'Catatan', 'Dicatat oleh'], ...rows.map(m => { const p = partMap.get(m.partId) || {}; return [fmtD(m.date), m.docNo, m.kind, p.partNo, p.name, m.qty, p.unit, partyName(m), poMap.get(m.poId)?.poNo || '', m.note, names[m.by] || '']; })]);
+      if (a === 'addin') openTx('in');
+      if (a === 'addout') openTx('out');
       if (a === 'del') delMove(id);
+      if (a === 'csv') exportCSV(mode === 'in' ? 'barang-masuk' : mode === 'out' ? 'barang-keluar' : 'part-in-out',
+        [['TGL', 'PART NUMBER', 'FORM/CUSTOMER', 'BPB/GR/GI', 'IN', 'OUT', 'BIN', 'DETAIL', 'FORM/TO', 'EKSPEDISI', 'PO CUST/REQ', 'AWB/RESI', 'REMARK', 'DICATAT OLEH'],
+          ...rows.slice().reverse().map(m => { const p = partMap.get(m.partId) || {}; return [fmtD(m.date), p.partNo, partyName(m), m.docNo, m.dir === 'in' ? m.qty : '', m.dir === 'out' ? m.qty : '', p.location, p.name, m.kind, m.ekspedisi, poText(m), m.awb, m.note, names[m.by] || '']; })]);
     },
     fill() {
       const q = st.q.toLowerCase();
-      rows = S.movements.filter(m => m.dir === dir && (!st.kind || m.kind === st.kind) && (!st.from || m.date >= st.from) && (!st.to || m.date <= st.to) && (!q || [m.docNo, m.kind, m.note, partyName(m), poMap.get(m.poId)?.poNo, partMap.get(m.partId)?.partNo, partMap.get(m.partId)?.name].join(' ').toLowerCase().includes(q)))
+      rows = S.movements.filter(m => (mode === 'all' || m.dir === mode) && (!st.kind || m.kind === st.kind) && (!st.from || m.date >= st.from) && (!st.to || m.date <= st.to)
+        && (!q || [m.docNo, m.kind, m.note, partyName(m), poText(m), m.ekspedisi, m.awb, partMap.get(m.partId)?.partNo, partMap.get(m.partId)?.name].join(' ').toLowerCase().includes(q)))
         .sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1));
-      const total = rows.reduce((s, m) => s + m.qty, 0);
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tanggal</th><th>No. Dokumen</th><th>Jenis</th><th>Part</th><th class="n">Qty</th><th>${dir === 'in' ? 'Supplier / Customer' : 'Customer / Supplier'}</th><th>No. PO</th><th>Catatan</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono">${esc(m.docNo)}</td><td>${esc(m.kind)}</td><td>${p ? `<span class="mono">${esc(p.partNo)}</span> ${esc(p.name)}` : '<span class="mut">(dihapus)</span>'}</td><td class="n ${dir}">${dir === 'in' ? '+' : '−'}${fmtN(m.qty)} <span class="mut">${esc(p?.unit || '')}</span></td><td>${esc(partyName(m))}</td><td class="mono">${esc(poMap.get(m.poId)?.poNo || '')}</td><td class="mut">${esc(m.note)}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="4" class="mut" style="padding:10px 12px">${rows.length} transaksi${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}</td><td class="n"><b>${fmtN(total)}</b></td><td colspan="5"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada riwayat ${label.toLowerCase()} untuk filter ini.` : 'Memuat…');
+      const tin = rows.reduce((s, m) => s + (m.dir === 'in' ? m.qty : 0), 0), tout = rows.reduce((s, m) => s + (m.dir === 'out' ? m.qty : 0), 0);
+      const sIn = mode !== 'out', sOut = mode !== 'in';
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n">In</th>' : ''}${sOut ? '<th class="n">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="5" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}</td>${sIn ? `<td class="n"><b>${fmtN(tin)}</b></td>` : ''}${sOut ? `<td class="n"><b>${fmtN(tout)}</b></td>` : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label.toLowerCase()} untuk filter ini.` : 'Memuat…');
     }
   };
 }
 async function delMove(id) {
   if (!isFull) return denied();
-  if (await confirmBox('Hapus transaksi ini? Saldo kartu stok akan ikut berubah. Untuk koreksi biasa, lebih baik buat transaksi “Koreksi”.')) { if (await guarded(() => db.doc('movements/' + id).delete())) toast('Transaksi dihapus'); }
+  if (await confirmBox('Hapus transaksi ini? Saldo stok dan kartu stok akan ikut berubah. Untuk koreksi biasa, lebih baik buat transaksi “KOREKSI”.')) { if (await guarded(() => db.doc('movements/' + id).delete())) toast('Transaksi dihapus'); }
 }
 function nextDocNo(prefix) {
   const pre = `${prefix}-${today().replace(/-/g, '').slice(2, 6)}-`;
@@ -605,60 +644,42 @@ function nextDocNo(prefix) {
 function openTx(dir, preset = {}) {
   if (!canWrite) return denied();
   if (!S.parts.length) { toast('Tambahkan spare part terlebih dahulu.', 'err'); return; }
-  const kinds = dir === 'in' ? KIND_IN : KIND_OUT;
-  const m = modal(`<h3>${dir === 'in' ? 'Barang Masuk' : 'Barang Keluar'}</h3>
+  const types = dir === 'in' ? IN_TYPES : OUT_TYPES;
+  const m = modal(`<h3>${dir === 'in' ? 'Barang Masuk (IN)' : 'Barang Keluar (OUT)'}</h3>
   <form id="tx"><div class="grid">
-    ${fld('Tanggal', 'date', { type: 'date', val: today(), attrs: 'required' })}
-    ${fld('No. Dokumen', 'docNo', { val: nextDocNo(dir === 'in' ? 'BM' : 'BK'), attrs: 'required' })}
-    ${fld('Jenis transaksi', 'kind', { opts: kinds.map(k => [k.k, k.k]), val: preset.kind || kinds[0].k })}
-    <label class="f" id="partyw"><span id="partyl">Pihak</span><select name="partyId"></select></label>
-    ${dir === 'out' ? '<label class="f s2" id="pow"><span>Terkait PO customer (opsional)</span><select name="poId"></select></label>' : ''}
-    ${fld('Catatan', 'note', { type: 'textarea', span: 2, val: preset.note || '' })}
+    ${fld('Tanggal', 'date', { type: 'date', val: preset.date || today(), attrs: 'required' })}
+    ${fld('No. Dokumen (BPB/GR/GI)', 'docNo', { val: preset.docNo || nextDocNo(dir === 'in' ? 'BM' : 'BK'), attrs: 'required' })}
+    ${fld('FORM/TO', 'kind', { opts: types.map(k => [k, k]), val: preset.kind || types[0] })}
+    ${fld(dir === 'in' ? 'Dari (FORM/CUSTOMER)' : 'Customer / penerima (FORM/CUSTOMER)', 'party', { val: preset.party || '', list: dir === 'in' ? 'srclist' : 'custlist', ph: dir === 'in' ? 'mis. IPE SGP' : 'Ketik / pilih customer' })}
+    ${fld('Ekspedisi', 'ekspedisi', { val: preset.ekspedisi || '', list: 'ekspList' })}
+    ${fld('PO CUST / REQ', 'poRef', { val: preset.poRef || '', list: 'polist', ph: 'No. PO/QT atau referensi' })}
+    ${fld('AWB / Resi', 'awb', { val: preset.awb || '' })}
+    ${fld('Remark', 'note', { val: preset.note || '' })}
   </div>
-  <div class="lines tx"><div class="lh"><span>Spare part</span><span>Qty</span><span>Stok saat ini</span><span></span></div><div id="ls"></div>
-    <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> ${dir === 'out' ? '<button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi sisa PO</button>' : ''}</div></div>
+  <div class="lines tx"><div class="lh"><span>Part number</span><span>Qty</span><span>Bin · Stok · Free</span><span></span></div><div id="ls"></div>
+    <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO</button></div></div>
   </form><div class="err" id="terr"></div>
   <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan transaksi</button></div>`, { wide: true });
-  const el = m.el, f = $('#tx', el), ls = $('#ls', el);
-  const kindMeta = () => kinds.find(k => k.k === f.elements.kind.value);
+  const el = m.el, f = $('#tx', el), ls = $('#ls', el), E = f.elements;
+  const findPO = () => { const v = E.poRef.value.trim().toLowerCase(); return v ? S.pos.find(p => p.poNo.toLowerCase() === v && p.status !== 'batal') : null; };
+  function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `${p.location || '-'} · ${fmtN(stock(p.id))} · ${fmtN(stock(p.id) - (commit.get(p.id) || 0))}` : ''; }
   function addLine(pid = '', qty = '') {
     const p = pid ? partMap.get(pid) : null;
     const d = document.createElement('div'); d.className = 'lr';
     d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="li mut"></span><button type="button" class="btn sm" data-x="rm" title="Hapus baris">×</button>`;
     ls.appendChild(d); info(d);
   }
-  function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `${fmtN(stock(p.id))} ${p.unit}` : ''; }
-  function setParty() {
-    const km = kindMeta(); const sel = f.elements.partyId;
-    const list = km.p === 'supplier' ? S.suppliers : km.p === 'customer' ? S.customers : [];
-    sel.innerHTML = '<option value="">— tidak ada —</option>' + list.slice().sort((a, b) => byText(a.name, b.name)).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
-    sel.disabled = !km.p; $('#partyl', el).textContent = km.p === 'supplier' ? 'Supplier' : km.p === 'customer' ? 'Customer' : 'Pihak (tidak diperlukan)';
-    if (preset.partyId && list.some(x => x.id === preset.partyId)) sel.value = preset.partyId;
-    if (dir === 'out') setPO();
-  }
-  function setPO() {
-    const km = kindMeta(), pw = $('#pow', el); pw.hidden = !km.po; if (!km.po) { f.elements.poId.value = ''; $('#fillpo', el).hidden = true; return; }
-    const cid = f.elements.partyId.value;
-    const list = S.pos.filter(po => poInfo(po).open && (!cid || po.customerId === cid || po.id === preset.poId));
-    f.elements.poId.innerHTML = '<option value="">— tanpa PO —</option>' + list.map(po => `<option value="${po.id}">${esc(po.poNo)} · ${esc(custMap.get(po.customerId)?.name || '')}</option>`).join('');
-    if (preset.poId && list.some(po => po.id === preset.poId)) f.elements.poId.value = preset.poId;
-    $('#fillpo', el).hidden = !f.elements.poId.value;
-  }
   function fillPO() {
-    const po = poMap.get(f.elements.poId.value); if (!po) return;
-    const inf = poInfo(po); ls.innerHTML = '';
-    for (const it of po.items) { const left = it.qty - (inf.d.get(it.partId) || 0); if (left > 0) addLine(it.partId, Math.min(left, Math.max(0, stock(it.partId))) || left); }
+    const po = findPO(); if (!po) return; const inf = poInfo(po); ls.innerHTML = '';
+    for (const l of inf.lines) if (l.sisa > 0) addLine(l.partId, Math.min(l.sisa, Math.max(0, stock(l.partId))) || l.sisa);
     if (!ls.children.length) addLine();
+    if (!E.party.value) E.party.value = custMap.get(po.customerId)?.name || '';
   }
-  f.elements.kind.addEventListener('change', () => { preset = { ...preset, partyId: '', poId: '' }; setParty(); });
-  f.elements.partyId.addEventListener('change', () => { if (dir === 'out') { preset = { ...preset, poId: '' }; setPO(); } });
-  if (dir === 'out') f.elements.poId.addEventListener('change', () => {
-    const po = poMap.get(f.elements.poId.value); $('#fillpo', el).hidden = !po;
-    if (po) { f.elements.partyId.value = po.customerId; fillPO(); }
-  });
+  const togglePO = () => { $('#fillpo', el).hidden = !(dir === 'out' && findPO()); };
+  E.poRef.addEventListener('input', togglePO);
   ls.addEventListener('input', e => { if (e.target.classList.contains('lp')) info(e.target.parentElement); });
-  setParty();
   if (preset.lines && preset.lines.length) preset.lines.forEach(l => addLine(l.partId, l.qty)); else addLine();
+  togglePO();
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return;
     const x = b.dataset.x;
@@ -671,17 +692,77 @@ function openTx(dir, preset = {}) {
       if (!f.reportValidity()) return;
       const lines = [...ls.children].map(r => ({ p: partFromText($('.lp', r).value), raw: $('.lp', r).value.trim(), q: parseFloat($('.lq', r).value) })).filter(l => l.raw || l.q);
       if (!lines.length) { err.textContent = 'Isi minimal satu baris spare part.'; return; }
-      for (const l of lines) { if (!l.p) { err.textContent = `Spare part “${l.raw}” tidak ditemukan. Pilih dari daftar yang muncul.`; return; } if (!(l.q > 0)) { err.textContent = `Qty untuk ${l.p.partNo} harus lebih dari 0.`; return; } }
+      for (const l of lines) { if (!l.p) { err.textContent = `Part “${l.raw}” tidak ditemukan. Pilih dari daftar yang muncul.`; return; } if (!(l.q > 0)) { err.textContent = `Qty untuk ${l.p.partNo} harus lebih dari 0.`; return; } }
       const sum = new Map(); for (const l of lines) sum.set(l.p.id, (sum.get(l.p.id) || 0) + l.q);
       if (dir === 'out') for (const [id, q] of sum) if (q > stock(id)) { const p = partMap.get(id); err.textContent = `Stok ${p.partNo} tidak cukup: tersedia ${fmtN(stock(id))} ${p.unit}, diminta ${fmtN(q)}.`; return; }
-      const km = kindMeta(), v = Object.fromEntries(new FormData(f));
+      const v = Object.fromEntries(new FormData(f)); const party = (v.party || '').trim();
+      const pl = (dir === 'in' ? S.suppliers : S.customers).find(x => x.name.toLowerCase() === party.toLowerCase());
+      const po = findPO();
       b.disabled = true;
       const ok = await guarded(async () => {
-        for (const l of lines) await db.collection('movements').add({ docNo: v.docNo.trim(), date: v.date, partId: l.p.id, qty: l.q, dir, kind: v.kind, partyType: km.p && v.partyId ? km.p : '', partyId: km.p ? (v.partyId || '') : '', poId: km.po ? (v.poId || '') : '', note: (v.note || '').trim(), by: uid, at: nowISO() });
+        for (const l of lines) await db.collection('movements').add({ docNo: v.docNo.trim(), date: v.date, partId: l.p.id, qty: l.q, dir, kind: v.kind, party, partyId: pl ? pl.id : '', poRef: (v.poRef || '').trim(), poId: po ? po.id : '', ekspedisi: (v.ekspedisi || '').trim(), awb: (v.awb || '').trim(), note: (v.note || '').trim(), by: uid, at: nowISO() });
       });
       if (ok) { m.close(); toast(`${lines.length} baris tersimpan`); } else b.disabled = false;
     }
   });
+}
+
+/* ============ SOH BULANAN ============ */
+const SOH_OUT = [['sold', 'SOLD CUSTOMER', 'Sold Customer'], ['bjm', 'IPE BJM', 'IPE BJM'], ['smd', 'IPE SMD', 'IPE SMD'], ['bpp', 'IPE BPP', 'IPE BPP'], ['ptk', 'IPE PTK', 'IPE PTK'], ['sby', 'IPE SBY', 'IPE SBY'], ['jkt', 'IPE JKT', 'IPE JKT'], ['pky', 'IPE PKY', 'IPE PKY'], ['wh', 'WH03 SERVICE', 'WH03 Service'], ['bund', 'BUNDLING', 'Bundling'], ['dmg', 'PART DAMAGE', 'Part Damage']];
+function computeSOH(ym) {
+  const start = ym + '-01', end = ym + '-31'; const R = new Map();
+  const get = id => { let r = R.get(id); if (!r) { r = { awal: 0, in: 0, other: 0 }; SOH_OUT.forEach(o => r[o[0]] = 0); R.set(id, r); } return r; };
+  const byKind = new Map(SOH_OUT.map(o => [o[1], o[0]]));
+  for (const m of S.movements) {
+    if (!partMap.has(m.partId)) continue; const d = m.date || ''; if (d > end) continue;
+    const r = get(m.partId);
+    if (d < start) { r.awal += m.dir === 'in' ? m.qty : -m.qty; continue; }
+    if (m.dir === 'in') { if (isOpening(m)) r.awal += m.qty; else r.in += m.qty; }
+    else { const k = byKind.get(m.kind); if (k) r[k] += m.qty; else r.other += m.qty; }
+  }
+  return R;
+}
+function viewSOH() {
+  let rows = [], page = 0; const PS = 100;
+  const st = F.soh;
+  return {
+    shell: `${loadNoteHTML}
+    <div class="bar">
+      <label class="mut">Bulan <input type="month" id="ym" value="${st.ym}"></label>
+      <input type="search" id="q" placeholder="Cari part number / deskripsi / bin…" value="${esc(st.q)}">
+      <label class="mut" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="act" ${st.active ? 'checked' : ''}> Hanya yang ada stok / bergerak</label>
+      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>
+    </div><div id="sohcards"></div>
+    <div class="tw"><div id="tbl"></div></div><div class="bar" style="margin-top:10px;justify-content:center" id="pg"></div>`,
+    input(e) {
+      if (e.target.id === 'ym') { if (!e.target.value) return; st.ym = e.target.value; }
+      if (e.target.id === 'q') st.q = e.target.value;
+      if (e.target.id === 'act') st.active = e.target.checked;
+      page = 0; this.fill();
+    },
+    act(a) {
+      if (a === 'prev') { page = Math.max(0, page - 1); this.fill(true); }
+      if (a === 'next') { page++; this.fill(true); }
+      if (a === 'csv') {
+        const hdr = ['NO', 'PART NUMBER', 'SUPRESSION', 'DESCRIPTION', 'BIN LOC', 'STOCK AWAL BULAN', 'STOCK FREE', 'IN', 'COMMITED', ...SOH_OUT.map(o => o[2].toUpperCase()), 'LAINNYA', 'TOTAL OUT', 'STOCK AKHIR', 'TOTAL DELIVERY'];
+        exportCSV('SOH-' + st.ym, [hdr, ...rows.map((r, i) => [i + 1, r.p.partNo, r.p.supersession || '', r.p.name, r.p.location || '', r.awal, r.free, r.in, r.com, ...SOH_OUT.map(o => r[o[0]]), r.other, r.out, r.akhir, r.deliv])]);
+      }
+    },
+    fill(keep) {
+      const R = computeSOH(st.ym), q = st.q.toLowerCase();
+      rows = S.parts.slice().sort((a, b) => byText(a.partNo, b.partNo)).map(p => {
+        const r = R.get(p.id) || { awal: 0, in: 0, other: 0, ...Object.fromEntries(SOH_OUT.map(o => [o[0], 0])) };
+        const out = SOH_OUT.reduce((s, o) => s + r[o[0]], 0) + r.other, akhir = r.awal + r.in - out, com = commit.get(p.id) || 0;
+        return { p, ...r, out, akhir, com, free: akhir - com, deliv: r.sold + r.wh + r.bund };
+      }).filter(r => (!st.active || r.awal || r.in || r.out || r.akhir || r.com) && (!q || [r.p.partNo, r.p.name, r.p.location, r.p.supersession].join(' ').toLowerCase().includes(q)));
+      const tot = rows.reduce((t, r) => { t.awal += r.awal; t.in += r.in; t.out += r.out; t.akhir += r.akhir; t.deliv += r.deliv; t.val += Math.max(0, r.akhir) * (r.p.price || 0); return t; }, { awal: 0, in: 0, out: 0, akhir: 0, deliv: 0, val: 0 });
+      $('#sohcards').innerHTML = `<div class="cards"><div class="card stat"><small>Stok awal bulan</small><b>${fmtN(tot.awal)}</b></div><div class="card stat"><small>Total IN</small><b class="in">${fmtN(tot.in)}</b></div><div class="card stat"><small>Total OUT</small><b class="out">${fmtN(tot.out)}</b></div><div class="card stat hl"><small>Stok akhir</small><b>${fmtN(tot.akhir)}</b></div><div class="card stat"><small>Total delivery</small><b>${fmtN(tot.deliv)}</b></div><div class="card stat"><small>Nilai stok akhir</small><b style="font-size:19px">${fmtRp(tot.val)}</b></div></div>`;
+      const pages = Math.max(1, Math.ceil(rows.length / PS)); if (page >= pages) page = pages - 1;
+      const slice = rows.slice(page * PS, page * PS + PS);
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th class="n">No</th><th>Part Number</th><th>Description</th><th>Bin</th><th class="n">Stok Awal</th><th class="n">Stock Free</th><th class="n">In</th><th class="n">Commited</th>${SOH_OUT.map(o => `<th class="n">${o[2]}</th>`).join('')}<th class="n">Lainnya</th><th class="n">Total Out</th><th class="n">Stok Akhir</th><th class="n">Total Delivery</th></tr></thead><tbody>${slice.map((r, i) => `<tr><td class="n mut">${page * PS + i + 1}</td><td class="mono"><b>${esc(r.p.partNo)}</b>${r.p.supersession ? `<div class="mut" style="font-size:11px">→ ${esc(r.p.supersession)}</div>` : ''}</td><td>${esc(r.p.name)}</td><td>${esc(r.p.location || '')}</td><td class="n">${fmtN(r.awal)}</td><td class="n ${r.free < 0 ? 'out' : ''}"><b>${fmtN(r.free)}</b></td><td class="n in">${r.in ? fmtN(r.in) : ''}</td><td class="n">${r.com ? fmtN(r.com) : ''}</td>${SOH_OUT.map(o => `<td class="n">${r[o[0]] ? fmtN(r[o[0]]) : ''}</td>`).join('')}<td class="n">${r.other ? fmtN(r.other) : ''}</td><td class="n out">${r.out ? fmtN(r.out) : ''}</td><td class="n"><b>${fmtN(r.akhir)}</b></td><td class="n">${r.deliv ? fmtN(r.deliv) : ''}</td></tr>`).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada part yang cocok.' : (loaded.parts ? 'Belum ada spare part.' : 'Memuat…'));
+      $('#pg').innerHTML = rows.length > PS ? `<button class="btn sm" data-act="prev" ${page === 0 ? 'disabled' : ''}>‹ Sebelumnya</button><span class="mut">Halaman ${page + 1} / ${pages} · ${fmtN(rows.length)} part</span><button class="btn sm" data-act="next" ${page >= pages - 1 ? 'disabled' : ''}>Berikutnya ›</button>` : `<span class="mut">${fmtN(rows.length)} part</span>`;
+    }
+  };
 }
 
 /* ============ KARTU STOK ============ */
@@ -716,7 +797,7 @@ function viewKartu() {
     act(a) {
       if (!cur) { toast('Pilih spare part terlebih dahulu.', 'err'); return; }
       const rowsOut = [['Tanggal', 'No. Dokumen', 'Keterangan', 'Masuk', 'Keluar', 'Saldo']];
-      const desc = r => [r.kind, partyName(r), poMap.get(r.poId) ? 'PO ' + poMap.get(r.poId).poNo : '', r.note].filter(Boolean).join(' · ');
+      const desc = r => [r.kind, partyName(r), poText(r) ? 'PO ' + poText(r) : '', r.ekspedisi, r.awb, r.note].filter(Boolean).join(' · ');
       if (a === 'csv') exportCSV('kartu-stok-' + cur.p.partNo, [['Kartu Stok', cur.p.partNo, cur.p.name], ...rowsOut, ...(F.kartu.from ? [['', '', 'Saldo awal periode', '', '', cur.open]] : []), ...cur.rows.map(r => [fmtD(r.date), r.docNo, desc(r), r.i || '', r.o || '', r.bal])]);
       if (a === 'pdf') {
         const doc = pdfDoc('KARTU STOK', `Periode: ${F.kartu.from ? fmtD(F.kartu.from) : 'awal'} s/d ${F.kartu.to ? fmtD(F.kartu.to) : fmtD(today())}`); if (!doc) return;
@@ -739,7 +820,7 @@ function viewKartu() {
         <div class="card stat"><small>Keluar (periode)</small><b class="out">${fmtN(tout)}</b></div></div>
       <div class="tw">${rows.length || F.kartu.from ? `<table><thead><tr><th>Tanggal</th><th>No. Dokumen</th><th>Keterangan</th><th class="n">Masuk</th><th class="n">Keluar</th><th class="n">Saldo</th></tr></thead><tbody>
         ${F.kartu.from ? `<tr><td colspan="5" class="mut"><i>Saldo awal periode</i></td><td class="n"><b>${fmtN(open)}</b></td></tr>` : ''}
-        ${rows.map(r => `<tr><td>${fmtD(r.date)}</td><td class="mono">${esc(r.docNo)}</td><td>${esc(r.kind)}${partyName(r) ? ' · ' + esc(partyName(r)) : ''}${poMap.get(r.poId) ? ' · PO ' + esc(poMap.get(r.poId).poNo) : ''}${r.note ? `<div class="mut" style="font-size:12px">${esc(r.note)}</div>` : ''}</td><td class="n in">${r.i ? fmtN(r.i) : ''}</td><td class="n out">${r.o ? fmtN(r.o) : ''}</td><td class="n"><b>${fmtN(r.bal)}</b></td></tr>`).join('')}</tbody></table>` : empty('Belum ada transaksi untuk part ini.')}</div>`;
+        ${rows.map(r => `<tr><td>${fmtD(r.date)}</td><td class="mono">${esc(r.docNo)}</td><td>${esc(r.kind)}${partyName(r) ? ' · ' + esc(partyName(r)) : ''}${poText(r) ? ' · PO ' + esc(poText(r)) : ''}${r.ekspedisi ? ' · ' + esc(r.ekspedisi) : ''}${r.awb ? ' · ' + esc(r.awb) : ''}${r.note ? `<div class="mut" style="font-size:12px">${esc(r.note)}</div>` : ''}</td><td class="n in">${r.i ? fmtN(r.i) : ''}</td><td class="n out">${r.o ? fmtN(r.o) : ''}</td><td class="n"><b>${fmtN(r.bal)}</b></td></tr>`).join('')}</tbody></table>` : empty('Belum ada transaksi untuk part ini.')}</div>`;
     }
   };
 }
@@ -760,7 +841,7 @@ function partyView(kind) {
     fill() {
       const q = F[fk].q.toLowerCase();
       rows = S[coll].filter(x => !q || [x.name, x.city, x.pic, x.phone].join(' ').toLowerCase().includes(q)).sort((a, b) => byText(a.name, b.name));
-      const cnt = x => isC ? S.pos.filter(p => p.customerId === x.id).length : S.movements.filter(m => m.partyType === 'supplier' && m.partyId === x.id).length;
+      const cnt = x => isC ? S.pos.filter(p => p.customerId === x.id).length : S.movements.filter(m => m.partyId === x.id).length;
       $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th><th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${canWrite ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
     }
   };
@@ -773,6 +854,7 @@ function partyForm(kind, id) {
   const x = id ? (isC ? custMap : suppMap).get(id) : {};
   const m = modal(`<h3>${id ? 'Edit' : 'Tambah'} ${lab}</h3><form class="grid" id="cf">
     ${fld('Nama perusahaan *', 'name', { val: x.name || '', span: 2, attrs: 'required' })}
+    ${isC ? fld('Plant / Estate (pisahkan dengan koma)', 'plants', { val: x.plants || '', span: 2, ph: 'mis. SERVICE, BUNDLING, JALEMO ESTATE' }) : ''}
     ${fld('PIC / kontak', 'pic', { val: x.pic || '' })}${fld('Telepon', 'phone', { val: x.phone || '' })}
     ${fld('Email', 'email', { type: 'email', val: x.email || '' })}${fld('Kota', 'city', { val: x.city || '' })}
     ${fld('Alamat', 'address', { type: 'textarea', span: 2, val: x.address || '' })}
@@ -801,20 +883,21 @@ function viewPO() {
   let rows = [];
   return {
     shell: `${ro(true)}${loadNoteHTML}
-    <div class="bar"><input type="search" id="q" placeholder="Cari no. PO, customer…" value="${esc(F.po.q)}">
-      <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+    <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
+      <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan', 'Stok kurang'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
       <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; this.fill(); },
     act(a, id) {
       if (a === 'add') poForm();
       if (a === 'view') poDetail(id);
-      if (a === 'csv') exportCSV('purchase-order', [['No. PO', 'Tanggal', 'Customer', 'Dibutuhkan', 'Jumlah Item', 'Qty Dipesan', 'Qty Terkirim', 'Nilai (Rp)', 'Status'], ...rows.map(p => { const i = poInfo(p); return [p.poNo, fmtD(p.date), custMap.get(p.customerId)?.name, fmtD(p.needBy), (p.items || []).length, i.ord, i.del, i.val, i.st.k]; })]);
+      if (a === 'csv') exportCSV('po-customer', [['TGL PO', 'NOMOR PO/QT', 'PLANT', 'PART NUMBER', 'CUSTOMER', 'BIN', 'DETAIL', 'QTY', 'KET', 'FREE', 'STOCK', 'STATUS', 'DELIVERY', 'REQ'],
+        ...rows.flatMap(p => poInfo(p).lines.map(l => { const pt = partMap.get(l.partId) || {}; return [fmtD(p.date), p.poNo, p.plant || '', pt.partNo, custMap.get(p.customerId)?.name || '', pt.location, pt.name, l.qty, l.ket === 'C' ? 'C' : (l.kurang ? -l.kurang : ''), l.free, l.stk, l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k, l.dv, l.req || '']; }))]);
     },
     fill() {
       const q = F.po.q.toLowerCase();
-      rows = S.pos.filter(p => (!q || (p.poNo + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || poInfo(p).st.k === F.po.st)).sort((a, b) => (b.date + b.poNo).localeCompare(a.date + a.poNo));
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. PO</th><th>Tanggal</th><th>Customer</th><th>Dibutuhkan</th><th class="n">Item</th><th>Progres kirim</th><th class="n">Nilai</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const i = poInfo(p); const pct = i.ord ? Math.round(i.del / i.ord * 100) : 0; return `<tr><td class="mono"><b>${esc(p.poNo)}</b></td><td>${fmtD(p.date)}</td><td>${esc(custMap.get(p.customerId)?.name || '—')}</td><td>${fmtD(p.needBy)}</td><td class="n">${(p.items || []).length}</td><td><div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${fmtN(i.del)}/${fmtN(i.ord)} unit</small></td><td class="n">${fmtRp(i.val)}</td><td><span class="chip ${i.st.c}">${i.st.k}</span></td><td class="act"><button class="btn sm" data-act="view" data-id="${p.id}">Detail</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.pos.length ? 'Tidak ada PO yang cocok.' : (loaded.pos ? 'Belum ada PO customer. Klik “+ PO Customer”.' : 'Memuat…'));
+      rows = S.pos.filter(p => { const i = poInfo(p); return (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : i.st.k === F.po.st)); }).sort((a, b) => (b.date + b.poNo).localeCompare(a.date + a.poNo));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. PO/QT</th><th>Tgl PO</th><th>Customer</th><th>Plant</th><th class="n">Item</th><th>Progres kirim</th><th>Kesiapan stok</th><th class="n">Nilai</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const i = poInfo(p); const pct = i.ord ? Math.round(i.del / i.ord * 100) : 0; return `<tr><td class="mono"><b>${esc(p.poNo)}</b></td><td>${fmtD(p.date)}</td><td>${esc(custMap.get(p.customerId)?.name || '—')}</td><td>${esc(p.plant || '')}</td><td class="n">${(p.items || []).length}</td><td><div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${fmtN(i.del)}/${fmtN(i.ord)} unit</small></td><td>${!i.open ? '<span class="mut">—</span>' : i.short ? `<span class="chip bad">${i.short} baris KURANG</span>` : '<span class="chip ok">LENGKAP</span>'}</td><td class="n">${fmtRp(i.val)}</td><td><span class="chip ${i.st.c}">${i.st.k}</span></td><td class="act"><button class="btn sm" data-act="view" data-id="${p.id}">Detail</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.pos.length ? 'Tidak ada PO yang cocok.' : (loaded.pos ? 'Belum ada PO customer. Klik “+ PO Customer”.' : 'Memuat…'));
     }
   };
 }
@@ -824,51 +907,49 @@ function poForm(id) {
   if (!S.parts.length) { toast('Tambahkan spare part terlebih dahulu.', 'err'); return; }
   const po = id ? poMap.get(id) : {};
   const m = modal(`<h3>${id ? 'Edit' : 'Tambah'} PO Customer</h3><form id="pf"><div class="grid">
-    ${fld('No. PO *', 'poNo', { val: po.poNo || '', attrs: 'required', ph: 'No. PO dari customer' })}
+    ${fld('No. PO / QT *', 'poNo', { val: po.poNo || '', attrs: 'required', ph: 'mis. QT 26250061' })}
     ${fld('Customer *', 'customerId', { val: po.customerId || '', opts: [['', '— pilih customer —'], ...S.customers.slice().sort((a, b) => byText(a.name, b.name)).map(c => [c.id, c.name])], attrs: 'required' })}
+    ${fld('Plant / Estate', 'plant', { val: po.plant || '', list: 'plantlist', ph: 'mis. SERVICE, BUNDLING, nama estate' })}
     ${fld('Tanggal PO', 'date', { type: 'date', val: po.date || today(), attrs: 'required' })}
-    ${fld('Dibutuhkan paling lambat', 'needBy', { type: 'date', val: po.needBy || '' })}
     ${fld('Catatan', 'note', { type: 'textarea', span: 2, val: po.note || '' })}
   </div>
-  <div class="lines po"><div class="lh"><span>Spare part</span><span>Qty</span><span>Harga satuan</span><span>Subtotal</span><span></span></div><div id="ls"></div>
-  <div style="padding:8px 10px;border-top:1px solid #f0f1f3;display:flex;justify-content:space-between;align-items:center"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button><b id="tot"></b></div></div></form>
+  <div class="lines po"><div class="lh"><span>Part number</span><span>Qty</span><span>KET</span><span>REQ / catatan baris</span><span></span></div><div id="ls"></div>
+  <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <span class="mut" style="font-size:12px">KET “C” = stok terpenuhi (otomatis dianggap LENGKAP). Kekurangan dihitung otomatis dari stock free.</span></div></div></form>
   <div class="err" id="perr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan PO</button></div>`, { wide: true });
   const el = m.el, ls = $('#ls', el);
-  function total() { let t = 0; for (const r of ls.children) { const q = parseFloat($('.lq', r).value) || 0, pr = parseFloat($('.lr2', r).value) || 0; $('.ls', r).textContent = fmtRp(q * pr); t += q * pr; } $('#tot', el).textContent = 'Total: ' + fmtRp(t); }
+  function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `Bin ${p.location || '-'} · Stok ${fmtN(stock(p.id))} · Free ${fmtN(stock(p.id) - (commit.get(p.id) || 0))}` : ''; }
   function addLine(it = {}) {
     const p = it.partId ? partMap.get(it.partId) : null;
     const d = document.createElement('div'); d.className = 'lr';
-    d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lq" type="number" min="0" step="any" value="${it.qty || ''}" placeholder="0"><input class="lr2" type="number" min="0" step="any" value="${it.price ?? ''}" placeholder="0"><span class="ls mut"></span><button type="button" class="btn sm" data-x="rm">×</button>`;
-    ls.appendChild(d); total();
+    d.innerHTML = `<div><input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><small class="li mut"></small></div><input class="lq" type="number" min="0" step="any" value="${it.qty || ''}" placeholder="0"><select class="lk"><option value="">Otomatis</option><option value="C" ${it.ket === 'C' ? 'selected' : ''}>C (terpenuhi)</option></select><input class="lrq" value="${esc(it.req || '')}" placeholder="mis. SS =716/09800"><button type="button" class="btn sm" data-x="rm">×</button>`;
+    ls.appendChild(d); info(d);
   }
-  ls.addEventListener('input', e => {
-    if (e.target.classList.contains('lp')) { const p = partFromText(e.target.value); const r = e.target.parentElement; if (p && !$('.lr2', r).value) $('.lr2', r).value = p.price || ''; }
-    total();
-  });
+  ls.addEventListener('input', e => { if (e.target.classList.contains('lp')) info(e.target.closest('.lr')); });
   (po.items && po.items.length ? po.items : [{}]).forEach(addLine);
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return;
     const x = b.dataset.x;
     if (x === 'c') m.close();
     if (x === 'addl') addLine();
-    if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); total(); }
+    if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); }
     if (x === 's') {
       const f = $('#pf', el), err = $('#perr', el); err.textContent = '';
       if (!f.reportValidity()) return;
       const v = Object.fromEntries(new FormData(f));
       const items = [];
       for (const r of ls.children) {
-        const raw = $('.lp', r).value.trim(), q = parseFloat($('.lq', r).value), pr = parseFloat($('.lr2', r).value) || 0;
+        const raw = $('.lp', r).value.trim(), q = parseFloat($('.lq', r).value);
         if (!raw && !q) continue;
         const p = partFromText(raw);
-        if (!p) { err.textContent = `Spare part “${raw}” tidak ditemukan. Pilih dari daftar.`; return; }
+        if (!p) { err.textContent = `Part “${raw}” tidak ditemukan. Pilih dari daftar.`; return; }
         if (!(q > 0)) { err.textContent = `Qty untuk ${p.partNo} harus lebih dari 0.`; return; }
-        const ex = items.find(i => i.partId === p.id); if (ex) { ex.qty += q; } else items.push({ partId: p.id, qty: q, price: pr });
+        const ket = $('.lk', r).value, req = $('.lrq', r).value.trim();
+        const ex = items.find(i => i.partId === p.id); if (ex) { ex.qty += q; if (ket) ex.ket = ket; if (req) ex.req = req; } else items.push({ partId: p.id, qty: q, ket, req });
       }
       if (!items.length) { err.textContent = 'Isi minimal satu baris spare part.'; return; }
-      if (S.pos.some(x2 => x2.id !== id && x2.customerId === v.customerId && x2.poNo.toLowerCase() === v.poNo.trim().toLowerCase())) { err.textContent = 'No. PO ini sudah ada untuk customer yang sama.'; return; }
+      if (S.pos.some(x2 => x2.id !== id && x2.poNo.trim().toLowerCase() === v.poNo.trim().toLowerCase())) { err.textContent = 'No. PO/QT ini sudah ada. Gunakan nomor yang berbeda atau edit PO yang sudah ada.'; return; }
       b.disabled = true;
-      const data = { poNo: v.poNo.trim(), customerId: v.customerId, date: v.date, needBy: v.needBy || '', note: (v.note || '').trim(), items, updatedAt: nowISO() };
+      const data = { poNo: v.poNo.trim(), customerId: v.customerId, plant: (v.plant || '').trim(), date: v.date, note: (v.note || '').trim(), items, updatedAt: nowISO() };
       const ok = await guarded(async () => { if (id) await db.doc('pos/' + id).update(data); else await db.collection('pos').add({ ...data, status: 'aktif', createdAt: nowISO(), createdBy: uid }); });
       if (ok) { m.close(); toast('PO tersimpan'); } else b.disabled = false;
     }
@@ -877,11 +958,11 @@ function poForm(id) {
 function poDetail(id) {
   const po = poMap.get(id); if (!po) return;
   const inf = poInfo(po), c = custMap.get(po.customerId);
-  const dels = S.movements.filter(x => x.poId === id && x.dir === 'out').sort((a, b) => a.date.localeCompare(b.date));
+  const dels = S.movements.filter(x => x.dir === 'out' && (x.poRef ? x.poRef.trim().toUpperCase() === po.poNo.trim().toUpperCase() : x.poId === id)).sort((a, b) => a.date.localeCompare(b.date));
   const m = modal(`<h3>PO ${esc(po.poNo)} <span class="chip ${inf.st.c}">${inf.st.k}</span></h3>
-  <dl class="kv"><dt>Customer</dt><dd>${esc(c?.name || '—')}</dd><dt>Tanggal PO</dt><dd>${fmtD(po.date)}</dd><dt>Dibutuhkan</dt><dd>${fmtD(po.needBy) || '—'}</dd><dt>Catatan</dt><dd>${esc(po.note) || '—'}</dd><dt>Nilai PO</dt><dd>${fmtRp(inf.val)}</dd></dl>
-  <div class="tw"><table><thead><tr><th>Spare part</th><th class="n">Dipesan</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Harga</th></tr></thead><tbody>${po.items.map(it => { const p = partMap.get(it.partId), d = inf.d.get(it.partId) || 0; return `<tr><td>${p ? `<span class="mono">${esc(p.partNo)}</span> ${esc(p.name)}` : '(dihapus)'}</td><td class="n">${fmtN(it.qty)}</td><td class="n">${fmtN(d)}</td><td class="n"><b>${fmtN(Math.max(0, it.qty - d))}</b></td><td class="n ${stock(it.partId) < Math.max(0, it.qty - d) ? 'out' : ''}">${fmtN(stock(it.partId))}</td><td class="n">${fmtRp(it.price)}</td></tr>`; }).join('')}</tbody></table></div>
-  ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  <dl class="kv"><dt>Customer</dt><dd>${esc(c?.name || '—')}</dd><dt>Plant</dt><dd>${esc(po.plant) || '—'}</dd><dt>Tanggal PO</dt><dd>${fmtD(po.date)}</dd><dt>Catatan</dt><dd>${esc(po.note) || '—'}</dd><dt>Nilai PO</dt><dd>${fmtRp(inf.val)} <span class="mut">(qty × harga master part)</span></dd></dl>
+  <div class="tw"><table><thead><tr><th>Part</th><th>Bin</th><th class="n">Qty</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Free</th><th>KET</th><th>Status</th><th>Delivery</th></tr></thead><tbody>${inf.lines.map(l => { const p = partMap.get(l.partId); return `<tr><td>${p ? `<span class="mono"><b>${esc(p.partNo)}</b></span> ${esc(p.name)}` : '(dihapus)'}${l.req ? `<div class="mut" style="font-size:12px">${esc(l.req)}</div>` : ''}</td><td>${esc(p?.location || '')}</td><td class="n">${fmtN(l.qty)}</td><td class="n">${fmtN(l.d)}</td><td class="n"><b>${fmtN(l.sisa)}</b></td><td class="n">${fmtN(l.stk)}</td><td class="n ${l.free < 0 ? 'out' : ''}">${fmtN(l.free)}</td><td>${l.ket === 'C' ? 'C' : (l.kurang ? '<span class="out">-' + fmtN(l.kurang) + '</span>' : '')}</td><td><span class="chip ${l.st.c}">${l.st.k}</span></td><td><span class="chip ${l.dv === 'DELIVERED' ? 'ok' : l.dv === 'REQ DONE' ? 'info' : 'gray'}">${l.dv}</span></td></tr>`; }).join('')}</tbody></table></div>
+  ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td>${esc(x.kind)}</td><td>${esc(x.ekspedisi || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button>
   ${canWrite && inf.open ? '<button class="btn primary" data-x="send">Buat Barang Keluar</button>' : ''}${canPO ? '<button class="btn" data-x="edit">Edit</button>' : ''}
   ${canPO && po.status !== 'batal' && inf.st.k !== 'Selesai' ? '<button class="btn" data-x="cancel">Batalkan PO</button>' : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
@@ -890,17 +971,19 @@ function poDetail(id) {
     const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
     if (x === 'c') m.close();
     if (x === 'edit') { m.close(); poForm(id); }
-    if (x === 'send') { m.close(); location.hash = '#barang-keluar'; setTimeout(() => openTx('out', { kind: SALE, partyId: po.customerId, poId: id, note: 'Pengiriman PO ' + po.poNo, lines: [] }), 50); setTimeout(() => { const f = $('#tx'); if (f && f.elements.poId) { f.elements.poId.value = id; f.elements.poId.dispatchEvent(new Event('change')); } }, 120); }
+    if (x === 'send') {
+      m.close(); location.hash = '#barang-keluar';
+      setTimeout(() => openTx('out', { kind: 'SOLD CUSTOMER', party: c?.name || '', poRef: po.poNo, note: 'Pengiriman PO ' + po.poNo, lines: inf.lines.filter(l => l.sisa > 0).map(l => ({ partId: l.partId, qty: Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa })) }), 60);
+    }
     if (x === 'cancel' || x === 'reopen') { if (await guarded(() => db.doc('pos/' + id).update({ status: x === 'cancel' ? 'batal' : 'aktif' }))) { m.close(); toast(x === 'cancel' ? 'PO dibatalkan' : 'PO diaktifkan'); } }
     if (x === 'del') { if (dels.length) { toast('PO ini sudah punya pengiriman, jadi tidak bisa dihapus. Gunakan “Batalkan PO”.', 'err'); return; } if (await confirmBox('Hapus PO ' + po.poNo + '?')) { if (await guarded(() => db.doc('pos/' + id).delete())) { m.close(); toast('PO dihapus'); } } }
     if (x === 'pdf') {
-      const doc = pdfDoc('PURCHASE ORDER CUSTOMER', 'No. PO: ' + pdfSafe(po.poNo)); if (!doc) return;
+      const doc = pdfDoc('PURCHASE ORDER CUSTOMER', 'No. PO/QT: ' + pdfSafe(po.poNo)); if (!doc) return;
       doc.setFontSize(9.5).setFont('helvetica', 'normal');
-      doc.text('Customer   : ' + pdfSafe(c?.name || '-'), 14, 42); doc.text('Tanggal PO : ' + fmtD(po.date), 14, 47); doc.text('Dibutuhkan : ' + (fmtD(po.needBy) || '-'), 14, 52);
+      doc.text('Customer   : ' + pdfSafe(c?.name || '-'), 14, 42); doc.text('Plant         : ' + pdfSafe(po.plant || '-'), 14, 47); doc.text('Tanggal PO : ' + fmtD(po.date), 14, 52);
       doc.text('Status       : ' + inf.st.k, 130, 42); if (po.note) doc.text('Catatan: ' + pdfSafe(po.note).slice(0, 70), 14, 57);
-      const body = po.items.map((it, i) => { const p = partMap.get(it.partId) || {}; const d = inf.d.get(it.partId) || 0; return [i + 1, pdfSafe(p.partNo), pdfSafe(p.name), fmtN(it.qty), fmtN(d), fmtN(Math.max(0, it.qty - d)), fmtN(it.price), fmtN(it.qty * it.price)]; });
-      const y = pdfTable(doc, 62, ['No', 'No. Part', 'Nama', 'Qty', 'Terkirim', 'Sisa', 'Harga (Rp)', 'Subtotal (Rp)'], body, { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } } });
-      doc.setFont('helvetica', 'bold').text('Total: Rp ' + fmtN(inf.val), 196, y + 8, { align: 'right' });
+      const body = inf.lines.map((l, i) => { const p = partMap.get(l.partId) || {}; return [i + 1, pdfSafe(p.partNo), pdfSafe(p.name), fmtN(l.qty), fmtN(l.d), fmtN(l.sisa), fmtN(l.free), l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k, l.dv]; });
+      pdfTable(doc, 62, ['No', 'No. Part', 'Detail', 'Qty', 'Terkirim', 'Sisa', 'Free', 'Status', 'Delivery'], body, { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } } });
       saveFile(`PO-${pdfSafe(po.poNo).replace(/[^\w-]+/g, '_')}.pdf`, doc.output('blob'));
     }
   });
