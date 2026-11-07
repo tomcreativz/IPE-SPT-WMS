@@ -970,7 +970,15 @@ function showLogin(msg) {
   $('#lf').onsubmit = async e => {
     e.preventDefault(); const v = Object.fromEntries(new FormData(e.target)); const btn = $('button', e.target); btn.disabled = true;
     const { data, error } = await sb.auth.signInWithPassword({ email: v.email.trim(), password: v.password });
-    if (error) { $('#lerr').textContent = 'Email atau password salah.'; btn.disabled = false; return; }
+    if (error) {
+      const m = String(error.message || '');
+      let t = 'Gagal masuk: ' + m;
+      if (/invalid login credentials/i.test(m)) t = 'Email atau password salah (atau akun belum dibuat di Supabase).';
+      else if (/not confirmed/i.test(m)) t = 'Email belum dikonfirmasi. Di Supabase: Authentication > Users, buka akun ini lalu konfirmasi, atau buat ulang dengan "Auto Confirm User" dicentang.';
+      else if (/api key|apikey|jwt/i.test(m)) t = 'Kunci API di config.js salah. Pakai anon/publishable key dari Project Settings > API.';
+      else if (/failed to fetch|network|load failed/i.test(m)) t = 'Tidak bisa menghubungi Supabase. Periksa SUPABASE_URL di config.js dan koneksi internet.';
+      $('#lerr').textContent = t; btn.disabled = false; return;
+    }
     L.hidden = true; start(data.session);
   };
 }
