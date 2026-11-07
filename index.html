@@ -1020,7 +1020,12 @@ async function boot() {
   if (!cfg || !cfg.SUPABASE_URL || /ISI_|YOUR_/i.test(cfg.SUPABASE_URL + cfg.SUPABASE_ANON_KEY) || !window.supabase) {
     $('#main').innerHTML = '<div class="card"><h2>Konfigurasi belum diisi</h2><p class="mut">Buka file <b>config.js</b> lalu isi <b>SUPABASE_URL</b> dan <b>SUPABASE_ANON_KEY</b> sesuai panduan.</p></div>'; $('#role').textContent = 'Belum dikonfigurasi'; return;
   }
-  sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+  let base = '';
+  try { const u = new URL(String(cfg.SUPABASE_URL).trim()); base = u.origin; } catch (e) { }
+  if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(base)) {
+    $('#main').innerHTML = '<div class="card"><h2>SUPABASE_URL di config.js tidak benar</h2><p class="mut">Isi dengan <b>Project URL</b> berbentuk <code>https://xxxxxxxx.supabase.co</code> (dari Project Settings &gt; API), bukan alamat dashboard dan tanpa tambahan di belakangnya.</p></div>'; $('#role').textContent = 'Konfigurasi salah'; return;
+  }
+  sb = window.supabase.createClient(base, String(cfg.SUPABASE_ANON_KEY).trim());
   const { data: { session } } = await sb.auth.getSession();
   if (session) start(session); else { $('#role').textContent = 'Belum masuk'; showLogin(); }
 }
