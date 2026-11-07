@@ -149,7 +149,7 @@ function toast(msg, type) {
 const S = { parts: [], movements: [], customers: [], suppliers: [], pos: [] };
 const loaded = {};
 let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
-let canWrite = false, isAdmin = false, loadFailed = false;
+let canWrite = false, canPO = false, isFull = false, loadFailed = false;
 let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map();
 const names = {};
 const F = { parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
@@ -283,11 +283,11 @@ const ROUTES = [
 ];
 let current = null;
 function buildNav() {
-  $('#nav').innerHTML = ROUTES.filter(r => !r[3] || isAdmin).map(([h, t]) => `<a href="#${h}" data-h="${h}"><i></i>${t}</a>`).join('');
+  $('#nav').innerHTML = ROUTES.filter(r => !r[3] || isFull).map(([h, t]) => `<a href="#${h}" data-h="${h}"><i></i>${t}</a>`).join('');
 }
 function route() {
   const h = (location.hash || '#dashboard').slice(1);
-  const r = ROUTES.find(x => x[0] === h && (!x[3] || isAdmin)) || ROUTES[0];
+  const r = ROUTES.find(x => x[0] === h && (!x[3] || isFull)) || ROUTES[0];
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.h === r[0]));
   $('#title').textContent = r[1];
   document.title = r[1] + ' — WMS PT Indonesia Prima Equipment Sampit';
@@ -305,7 +305,9 @@ function refresh() {
   if (note) note.hidden = !loadFailed;
   current.fill();
 }
-const ro = () => !canWrite ? '<div class="banner info">Akun Anda berhak <b>melihat saja</b>. Untuk menambah atau mengubah data, minta admin mengubah peran Anda menjadi Staf Gudang di menu Pengguna & Hak Akses.</div>' : '';
+const ro = (poPage) => (canWrite || (poPage && canPO)) ? '' : (myRole === 'admin'
+  ? '<div class="banner info">Peran Anda <b>Admin</b>: Anda dapat <b>membuat PO</b> (menu Purchase Order) dan <b>mengecek stok</b>. Pencatatan barang masuk/keluar dan pengelolaan data dilakukan oleh Staf Gudang.</div>'
+  : '<div class="banner info">Akun Anda berhak <b>melihat saja</b>. Untuk mengubah data, minta Staf Gudang mengubah peran Anda di menu Pengguna & Hak Akses.</div>');
 const loadNoteHTML = '<div id="loadnote" class="banner warn" hidden>Data belum bisa dijangkau. Periksa koneksi internet; data yang tampil mungkin belum yang terbaru.</div>';
 const empty = (t) => `<div class="empty">${t}</div>`;
 
@@ -353,7 +355,7 @@ function viewDashboard() {
       <div class="card"><h2>Transaksi terbaru</h2>
         ${recent.length ? `<div class="tw" style="border:0"><table><thead><tr><th>Tanggal</th><th>No. Dokumen</th><th>Jenis</th><th>Part</th><th class="n">Qty</th></tr></thead><tbody>${recent.map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono">${esc(m.docNo)}</td><td>${esc(m.kind)}</td><td>${p ? esc(p.partNo + ' — ' + p.name) : '<span class="mut">(dihapus)</span>'}</td><td class="n ${m.dir}">${m.dir === 'in' ? '+' : '−'}${fmtN(m.qty)}</td></tr>`; }).join('')}</tbody></table></div>` : empty('Belum ada transaksi.')}
       </div>
-      ${isAdmin && (parts.length || S.movements.length) ? `<p style="margin-top:22px"><button class="btn sm" data-act="wipe">Hapus semua data (admin)</button></p>` : ''}`;
+      ${isFull && (parts.length || S.movements.length) ? `<p style="margin-top:22px"><button class="btn sm" data-act="wipe">Hapus semua data</button></p>` : ''}`;
     }
   };
 }
@@ -398,7 +400,7 @@ async function loadSample() {
   toast('Data contoh dimuat');
 }
 async function wipeAll() {
-  if (!isAdmin) return denied();
+  if (!isFull) return denied();
   const ok = await confirmBox('Hapus SEMUA data (spare part, transaksi, customer, supplier, PO)? Tindakan ini tidak bisa dibatalkan.', 'Hapus semua');
   if (!ok) return;
   toast('Menghapus data…');
@@ -444,7 +446,7 @@ function viewParts() {
       const sel = $('#cat'); if (sel) { sel.innerHTML = '<option value="">Semua kategori</option>' + cs.map(c => `<option ${c === F.parts.cat ? 'selected' : ''}>${esc(c)}</option>`).join(''); }
       const q = F.parts.q.toLowerCase();
       rows = S.parts.filter(p => (!q || [p.partNo, p.name, p.model, p.location, p.category].join(' ').toLowerCase().includes(q)) && (!F.parts.cat || p.category === F.parts.cat) && (!F.parts.st || partStatus(p).k === F.parts.st)).sort((a, b) => byText(a.partNo, b.partNo));
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. Part</th><th>Nama</th><th>Kategori</th><th>Model</th><th>Lokasi</th><th class="n">Stok</th><th class="n">Min</th><th class="n">Harga</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const s = partStatus(p); return `<tr><td class="mono"><b>${esc(p.partNo)}</b></td><td>${esc(p.name)}<div class="mut" style="font-size:12px">${esc(suppMap.get(p.supplierId)?.name || '')}</div></td><td>${esc(p.category)}</td><td>${esc(p.model)}</td><td>${esc(p.location)}</td><td class="n"><b>${fmtN(stock(p.id))}</b> <span class="mut">${esc(p.unit)}</span></td><td class="n">${fmtN(p.minStock)}</td><td class="n">${fmtRp(p.price)}</td><td><span class="chip ${s.c}">${s.k}</span></td><td class="act"><button class="btn sm ghost" data-act="kartu" data-id="${p.id}">Kartu stok</button>${canWrite ? `<button class="btn sm" data-act="edit" data-id="${p.id}">Edit</button>` : ''}${isAdmin ? `<button class="btn sm" data-act="del" data-id="${p.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada spare part yang cocok dengan filter.' : (loaded.parts ? 'Belum ada spare part. Klik “+ Spare Part” atau “Impor CSV”.' : 'Memuat…'));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. Part</th><th>Nama</th><th>Kategori</th><th>Model</th><th>Lokasi</th><th class="n">Stok</th><th class="n">Min</th><th class="n">Harga</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const s = partStatus(p); return `<tr><td class="mono"><b>${esc(p.partNo)}</b></td><td>${esc(p.name)}<div class="mut" style="font-size:12px">${esc(suppMap.get(p.supplierId)?.name || '')}</div></td><td>${esc(p.category)}</td><td>${esc(p.model)}</td><td>${esc(p.location)}</td><td class="n"><b>${fmtN(stock(p.id))}</b> <span class="mut">${esc(p.unit)}</span></td><td class="n">${fmtN(p.minStock)}</td><td class="n">${fmtRp(p.price)}</td><td><span class="chip ${s.c}">${s.k}</span></td><td class="act"><button class="btn sm ghost" data-act="kartu" data-id="${p.id}">Kartu stok</button>${canWrite ? `<button class="btn sm" data-act="edit" data-id="${p.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${p.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada spare part yang cocok dengan filter.' : (loaded.parts ? 'Belum ada spare part. Klik “+ Spare Part” atau “Impor CSV”.' : 'Memuat…'));
     }
   };
 }
@@ -485,7 +487,7 @@ function partForm(id) {
   });
 }
 async function delPart(id) {
-  if (!isAdmin) return denied();
+  if (!isFull) return denied();
   const p = partMap.get(id); if (!p) return;
   if (S.movements.some(m => m.partId === id)) { toast('Part ini punya riwayat transaksi, jadi tidak bisa dihapus agar kartu stok tetap utuh.', 'err'); return; }
   if (S.pos.some(po => (po.items || []).some(i => i.partId === id))) { toast('Part ini dipakai di PO customer, jadi tidak bisa dihapus.', 'err'); return; }
@@ -587,12 +589,12 @@ function viewMoves(dir) {
       rows = S.movements.filter(m => m.dir === dir && (!st.kind || m.kind === st.kind) && (!st.from || m.date >= st.from) && (!st.to || m.date <= st.to) && (!q || [m.docNo, m.kind, m.note, partyName(m), poMap.get(m.poId)?.poNo, partMap.get(m.partId)?.partNo, partMap.get(m.partId)?.name].join(' ').toLowerCase().includes(q)))
         .sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1));
       const total = rows.reduce((s, m) => s + m.qty, 0);
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tanggal</th><th>No. Dokumen</th><th>Jenis</th><th>Part</th><th class="n">Qty</th><th>${dir === 'in' ? 'Supplier / Customer' : 'Customer / Supplier'}</th><th>No. PO</th><th>Catatan</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono">${esc(m.docNo)}</td><td>${esc(m.kind)}</td><td>${p ? `<span class="mono">${esc(p.partNo)}</span> ${esc(p.name)}` : '<span class="mut">(dihapus)</span>'}</td><td class="n ${dir}">${dir === 'in' ? '+' : '−'}${fmtN(m.qty)} <span class="mut">${esc(p?.unit || '')}</span></td><td>${esc(partyName(m))}</td><td class="mono">${esc(poMap.get(m.poId)?.poNo || '')}</td><td class="mut">${esc(m.note)}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isAdmin ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="4" class="mut" style="padding:10px 12px">${rows.length} transaksi${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}</td><td class="n"><b>${fmtN(total)}</b></td><td colspan="5"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada riwayat ${label.toLowerCase()} untuk filter ini.` : 'Memuat…');
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tanggal</th><th>No. Dokumen</th><th>Jenis</th><th>Part</th><th class="n">Qty</th><th>${dir === 'in' ? 'Supplier / Customer' : 'Customer / Supplier'}</th><th>No. PO</th><th>Catatan</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono">${esc(m.docNo)}</td><td>${esc(m.kind)}</td><td>${p ? `<span class="mono">${esc(p.partNo)}</span> ${esc(p.name)}` : '<span class="mut">(dihapus)</span>'}</td><td class="n ${dir}">${dir === 'in' ? '+' : '−'}${fmtN(m.qty)} <span class="mut">${esc(p?.unit || '')}</span></td><td>${esc(partyName(m))}</td><td class="mono">${esc(poMap.get(m.poId)?.poNo || '')}</td><td class="mut">${esc(m.note)}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="4" class="mut" style="padding:10px 12px">${rows.length} transaksi${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}</td><td class="n"><b>${fmtN(total)}</b></td><td colspan="5"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada riwayat ${label.toLowerCase()} untuk filter ini.` : 'Memuat…');
     }
   };
 }
 async function delMove(id) {
-  if (!isAdmin) return denied();
+  if (!isFull) return denied();
   if (await confirmBox('Hapus transaksi ini? Saldo kartu stok akan ikut berubah. Untuk koreksi biasa, lebih baik buat transaksi “Koreksi”.')) { if (await guarded(() => db.doc('movements/' + id).delete())) toast('Transaksi dihapus'); }
 }
 function nextDocNo(prefix) {
@@ -759,7 +761,7 @@ function partyView(kind) {
       const q = F[fk].q.toLowerCase();
       rows = S[coll].filter(x => !q || [x.name, x.city, x.pic, x.phone].join(' ').toLowerCase().includes(q)).sort((a, b) => byText(a.name, b.name));
       const cnt = x => isC ? S.pos.filter(p => p.customerId === x.id).length : S.movements.filter(m => m.partyType === 'supplier' && m.partyId === x.id).length;
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th><th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${canWrite ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isAdmin ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th><th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${canWrite ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
     }
   };
 }
@@ -787,7 +789,7 @@ function partyForm(kind, id) {
   });
 }
 async function delParty(kind, id) {
-  if (!isAdmin) return denied();
+  if (!isFull) return denied();
   const isC = kind === 'customer', coll = isC ? 'customers' : 'suppliers', x = (isC ? custMap : suppMap).get(id); if (!x) return;
   const used = S.movements.some(m => m.partyId === id) || (isC ? S.pos.some(p => p.customerId === id) : S.parts.some(p => p.supplierId === id));
   if (used) { toast('Data ini sudah dipakai di transaksi / PO / spare part, jadi tidak bisa dihapus.', 'err'); return; }
@@ -798,10 +800,10 @@ async function delParty(kind, id) {
 function viewPO() {
   let rows = [];
   return {
-    shell: `${ro()}${loadNoteHTML}
+    shell: `${ro(true)}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari no. PO, customer…" value="${esc(F.po.q)}">
       <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
+      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; this.fill(); },
     act(a, id) {
@@ -817,7 +819,7 @@ function viewPO() {
   };
 }
 function poForm(id) {
-  if (!canWrite) return denied();
+  if (!canPO) return denied();
   if (!S.customers.length) { toast('Tambahkan customer terlebih dahulu di menu Database Customer.', 'err'); return; }
   if (!S.parts.length) { toast('Tambahkan spare part terlebih dahulu.', 'err'); return; }
   const po = id ? poMap.get(id) : {};
@@ -881,9 +883,9 @@ function poDetail(id) {
   <div class="tw"><table><thead><tr><th>Spare part</th><th class="n">Dipesan</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Harga</th></tr></thead><tbody>${po.items.map(it => { const p = partMap.get(it.partId), d = inf.d.get(it.partId) || 0; return `<tr><td>${p ? `<span class="mono">${esc(p.partNo)}</span> ${esc(p.name)}` : '(dihapus)'}</td><td class="n">${fmtN(it.qty)}</td><td class="n">${fmtN(d)}</td><td class="n"><b>${fmtN(Math.max(0, it.qty - d))}</b></td><td class="n ${stock(it.partId) < Math.max(0, it.qty - d) ? 'out' : ''}">${fmtN(stock(it.partId))}</td><td class="n">${fmtRp(it.price)}</td></tr>`; }).join('')}</tbody></table></div>
   ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button>
-  ${canWrite && inf.open ? '<button class="btn primary" data-x="send">Buat Barang Keluar</button>' : ''}${canWrite ? '<button class="btn" data-x="edit">Edit</button>' : ''}
-  ${canWrite && po.status !== 'batal' && inf.st.k !== 'Selesai' ? '<button class="btn" data-x="cancel">Batalkan PO</button>' : ''}${canWrite && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
-  ${isAdmin ? '<button class="btn danger" data-x="del">Hapus</button>' : ''}<button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
+  ${canWrite && inf.open ? '<button class="btn primary" data-x="send">Buat Barang Keluar</button>' : ''}${canPO ? '<button class="btn" data-x="edit">Edit</button>' : ''}
+  ${canPO && po.status !== 'batal' && inf.st.k !== 'Selesai' ? '<button class="btn" data-x="cancel">Batalkan PO</button>' : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
+  ${isFull ? '<button class="btn danger" data-x="del">Hapus</button>' : ''}<button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
     if (x === 'c') m.close();
@@ -905,7 +907,7 @@ function poDetail(id) {
 }
 
 /* ============ pengguna ============ */
-const ROLES = [['admin', 'Admin'], ['staff', 'Staf Gudang'], ['viewer', 'Viewer (lihat saja)'], ['pending', 'Menunggu persetujuan']];
+const ROLES = [['staff', 'Staf Gudang (akses penuh)'], ['admin', 'Admin (buat PO & cek stok)'], ['viewer', 'Viewer (lihat saja)'], ['pending', 'Menunggu persetujuan']];
 async function loadProfiles() {
   const { data, error } = await sb.from('profiles').select('id,email,full_name,role').order('email');
   if (error) { console.error(error); return; }
@@ -914,7 +916,7 @@ async function loadProfiles() {
 }
 function viewUsers() {
   return {
-    shell: `<div class="banner info">Akun baru dibuat di dashboard Supabase (Authentication → Users → Add user). Setelah akun itu pertama kali masuk, atur perannya di sini. Peran: <b>Admin</b> (semua + hapus data), <b>Staf Gudang</b> (input &amp; ubah data), <b>Viewer</b> (hanya lihat).</div><div class="tw"><div id="tbl"></div></div>`,
+    shell: `<div class="banner info">Akun baru dibuat di dashboard Supabase (Authentication → Users → Add user). Setelah akun itu pertama kali masuk, atur perannya di sini. Peran: <b>Staf Gudang</b> (akses penuh: input barang masuk/keluar, kelola data, hapus, atur pengguna), <b>Admin</b> (hanya membuat PO dan mengecek stok), <b>Viewer</b> (hanya lihat).</div><div class="tw"><div id="tbl"></div></div>`,
     async input(e) {
       const id = e.target.dataset.uid; if (!id) return;
       if (id === uid) { toast('Anda tidak bisa mengubah peran akun sendiri.', 'err'); this.fill(); return; }
@@ -996,8 +998,8 @@ async function start(session) {
   if (error) { console.error(error); }
   myRole = prof ? prof.role : 'pending';
   if (!['admin', 'staff', 'viewer'].includes(myRole)) return showPending(myEmail);
-  isAdmin = myRole === 'admin'; canWrite = isAdmin || myRole === 'staff';
-  $('#role').textContent = { admin: 'Admin', staff: 'Staf gudang', viewer: 'Hanya lihat' }[myRole];
+  isFull = myRole === 'staff'; canWrite = isFull; canPO = isFull || myRole === 'admin';
+  $('#role').textContent = { staff: 'Staf gudang', admin: 'Admin (PO & cek stok)', viewer: 'Hanya lihat' }[myRole];
   $('#who').textContent = myEmail; const lo = $('#logout'); lo.hidden = false;
   lo.onclick = async () => { await sb.auth.signOut(); location.reload(); };
   db = makeDb(); buildNav();
