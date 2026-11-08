@@ -42,6 +42,18 @@ nav .sep{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:#6b
 .stat small{color:var(--mut);font-weight:500;display:block;margin-bottom:6px}
 .stat b{font-size:24px;letter-spacing:-.5px}
 .stat.hl{border-left:4px solid var(--y)}
+
+.chrow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.chrow .card,.chfull{margin:0}.chfull{margin-bottom:18px}
+.chcard h2{margin:0 0 2px;font-size:15px}.chcard .sub{color:var(--mut);font-size:12px;margin-bottom:10px}
+.dn{display:flex;align-items:center;gap:18px;flex-wrap:wrap;justify-content:center}
+.dn svg{width:210px;height:210px;flex:none}
+.dn .lg{display:flex;flex-direction:column;gap:6px;font-size:12.5px;min-width:150px}
+.lgi{display:flex;align-items:center;gap:7px;white-space:nowrap}.lgi i{width:11px;height:11px;border-radius:3px;flex:none}.lgi b{margin-left:auto;padding-left:10px;font-weight:600}
+.lgh{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;font-size:12.5px;margin-bottom:6px}
+.lgh span{display:flex;align-items:center;gap:6px}.lgh i{width:18px;height:3px;border-radius:2px}
+.lc{width:100%;height:auto;display:block}
+@media(max-width:900px){.chrow{grid-template-columns:1fr}}
 .revcard{grid-column:span 2;background:#1f2229;color:#fff;border-left:4px solid var(--y);display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
 .revcard small{display:block;color:#9aa0ac;font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase}
 .revcard .rv{font-size:26px;font-weight:700;letter-spacing:-.5px;margin:4px 0 12px;white-space:nowrap}
@@ -429,6 +441,66 @@ async function editTarget(yr) {
     if (ok) { m.close(); toast('Target disimpan'); current.fill && current.fill(); }
   };
 }
+/* ============ GRAFIK DASHBOARD ============ */
+const MV_COL = { DEADSTOCK: '#c8553d', SLOW: '#e08a2b', MEDIUM: '#6a8e4e', FAST: '#5b7fa8' };
+const MV_LBL = { DEADSTOCK: 'DEAD STOCK', SLOW: 'SLOW', MEDIUM: 'MEDIUM', FAST: 'FAST' };
+const MODEL_COL = ['#0f8b7e', '#e5b255', '#c8553d', '#5b7fa8', '#8e6bb0', '#6a8e4e', '#d1798b', '#8d99a6', '#b08a4e'];
+function sohAtMonthEnd(ym) { const mp = new Map(); for (const m of S.movements) { if ((m.date || '').slice(0, 7) > ym) continue; mp.set(m.partId, (mp.get(m.partId) || 0) + (m.dir === 'in' ? m.qty : -m.qty)); } return mp; }
+function chartMonths() {
+  const ds = S.movements.map(m => (m.date || '').slice(0, 7)).filter(Boolean).sort(); if (!ds.length) return [];
+  const last = ds[ds.length - 1] < curYM() ? ds[ds.length - 1] : curYM();
+  return monthsBack(last, 8).filter(ym => ym >= ds[0]);
+}
+const ymLabel = ym => { const n = +ym.slice(5, 7) - 1, b = BLN_ID[n]; return b[0] + b.slice(1).toLowerCase() + ' ' + ym.slice(0, 4); };
+function donutSVG(items) {
+  const tot = items.reduce((a, b) => a + b.v, 0); if (!(tot > 0)) return '<div class="mut" style="padding:60px 0;text-align:center">Belum ada data.</div>';
+  const cx = 100, cy = 100, R = 92, r = 52; let a0 = -Math.PI / 2, out = '';
+  const pt = (rad, a) => [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+  for (const it of items) {
+    if (!(it.v > 0)) continue; const f = it.v / tot, a1 = a0 + f * 2 * Math.PI - (f >= 0.9999 ? 0.0001 : 0), large = f > 0.5 ? 1 : 0;
+    const [x0, y0] = pt(R, a0), [x1, y1] = pt(R, a1), [x2, y2] = pt(r, a1), [x3, y3] = pt(r, a0);
+    out += `<path d="M${x0.toFixed(2)} ${y0.toFixed(2)}A${R} ${R} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}L${x2.toFixed(2)} ${y2.toFixed(2)}A${r} ${r} 0 ${large} 0 ${x3.toFixed(2)} ${y3.toFixed(2)}Z" fill="${it.c}" stroke="#fff" stroke-width="1.5"><title>${esc(it.n)}: ${esc(it.t)} (${(f * 100).toFixed(1)}%)</title></path>`;
+    if (f >= 0.06) { const [lx, ly] = pt((R + r) / 2, (a0 + a1) / 2); out += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" pointer-events="none">${Math.round(f * 100)}%</text>`; }
+    a0 += f * 2 * Math.PI;
+  }
+  return `<svg viewBox="0 0 200 200">${out}</svg>`;
+}
+function lineSVG(months, series) {
+  const W = 1000, H = 300, L = 92, Rr = 24, T = 14, B = 30, all = series.flatMap(s => s.vals), mx0 = Math.max(0, ...all), mn0 = Math.min(...all, 0);
+  const step = (() => { const raw = (mx0 - mn0) / 5 || 1, p = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; })();
+  const lo = Math.floor(mn0 / step) * step, hi = Math.ceil(mx0 / step) * step || step, X = i => L + (months.length > 1 ? i * (W - L - Rr) / (months.length - 1) : (W - L - Rr) / 2), Y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  let g = '';
+  for (let v = lo; v <= hi + 1e-6; v += step) g += `<line x1="${L}" x2="${W - Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#e5e7eb"/><text x="${L - 8}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="#6b7280">${fmtN(v)}</text>`;
+  months.forEach((ym, i) => g += `<text x="${X(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="12" fill="#6b7280">${(b => b[0] + b.slice(1).toLowerCase())(BULAN[+ym.slice(5, 7) - 1])}-${ym.slice(2, 4)}</text>`);
+  for (const s of series) {
+    const pts = s.vals.map((v, i) => [X(i), Y(v)]); let d = '';
+    pts.forEach((p, i) => { if (!i) d = `M${p[0].toFixed(1)} ${p[1].toFixed(1)}`; else { const q = pts[i - 1], mx = (q[0] + p[0]) / 2; d += `C${mx.toFixed(1)} ${q[1].toFixed(1)} ${mx.toFixed(1)} ${p[1].toFixed(1)} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`; } });
+    g += `<path d="${d}" fill="none" stroke="${s.c}" stroke-width="2.5" stroke-linejoin="round"/>` + pts.map((p, i) => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="${s.c}" stroke="#fff" stroke-width="1.5"><title>${esc(s.n)} · ${ymLabel(months[i])}: ${fmtRp(s.vals[i])}</title></circle>`).join('');
+  }
+  return `<svg class="lc" viewBox="0 0 ${W} ${H}">${g}</svg>`;
+}
+function dashChartsHTML() {
+  const months = chartMonths(); if (!months.length || !S.parts.length) return '';
+  const sel = months.includes(F.dash.ym) ? F.dash.ym : months[months.length - 1];
+  const cats = ['DEADSTOCK', 'SLOW', 'MEDIUM', 'FAST'], trend = cats.map(k => ({ k, n: MV_LBL[k], c: MV_COL[k], vals: [] })); let snap = null, snapSoh = null;
+  for (const ym of months) {
+    const soh = sohAtMonthEnd(ym), A = analyze(ym, soh), val = Object.fromEntries(cats.map(k => [k, 0]));
+    for (const a of A.values()) if (a.mv && a.soh > 0) val[a.mv] += a.soh * (a.p.price || 0);
+    trend.forEach(t => t.vals.push(val[t.k])); if (ym === sel) { snap = { A, val }; snapSoh = soh; }
+  }
+  const catItems = cats.map(k => ({ n: MV_LBL[k], c: MV_COL[k], v: snap.val[k], t: fmtRp(snap.val[k]) })), catTot = catItems.reduce((a, b) => a + b.v, 0) || 1;
+  const mc = new Map(); for (const p of S.parts) if ((snapSoh.get(p.id) || 0) > 0) { const k = (p.model || '').trim() || 'Tanpa model'; mc.set(k, (mc.get(k) || 0) + 1); }
+  const sorted = [...mc.entries()].sort((a, b) => b[1] - a[1]), top = sorted.slice(0, 8), rest = sorted.slice(8).reduce((a, b) => a + b[1], 0);
+  const modItems = top.map((e, i) => ({ n: e[0], v: e[1], c: MODEL_COL[i], t: fmtN(e[1]) + ' SKU' })); if (rest) modItems.push({ n: 'Lainnya', v: rest, c: MODEL_COL[8], t: fmtN(rest) + ' SKU' });
+  const modTot = modItems.reduce((a, b) => a + b.v, 0) || 1;
+  const leg = (items, tot) => `<div class="lg">${items.map(i => `<div class="lgi"><i style="background:${i.c}"></i>${esc(i.n)}<b>${Math.round(i.v / tot * 100)}%</b></div>`).join('')}</div>`;
+  return `<div class="bar" style="margin-bottom:10px"><label class="mut">Bulan grafik <select id="chym">${months.slice().reverse().map(ym => `<option value="${ym}" ${ym === sel ? 'selected' : ''}>${ymLabel(ym)}</option>`).join('')}</select></label><span class="mut" style="font-size:12px">Stok akhir bulan terpilih; klasifikasi memakai analisis 6 bulan sebelumnya.</span></div>
+  <div class="chrow">
+    <div class="card chcard"><h2>Nilai Stok per Kategori</h2><div class="sub">${ymLabel(sel)} · total ${fmtRp(catTot === 1 && !catItems.some(i => i.v) ? 0 : catTot)}</div><div class="dn">${donutSVG(catItems)}${leg(catItems, catTot)}</div></div>
+    <div class="card chcard"><h2>Jumlah SKU per Model</h2><div class="sub">${ymLabel(sel)} · SKU dengan stok &gt; 0</div><div class="dn">${donutSVG(modItems)}${leg(modItems, modTot)}</div></div>
+  </div>
+  <div class="card chcard chfull"><h2>Tren Nilai Stok per Kategori</h2><div class="sub">Nilai stok akhir bulan (Rp), ${months.length} bulan terakhir</div><div class="lgh">${trend.map(t => `<span><i style="background:${t.c}"></i>${t.n}</span>`).join('')}</div><div style="overflow-x:auto"><div style="min-width:640px">${lineSVG(months, trend)}</div></div></div>`;
+}
 /* ============ DASHBOARD ============ */
 /* ============ ANALITIK (movement, min/max, re-order, urgensi) ============ */
 const DELIV_KINDS = ['SOLD CUSTOMER', 'WH03 SERVICE', 'BUNDLING'];
@@ -467,7 +539,7 @@ const mvChip = m => ({ FAST: 'ok', MEDIUM: 'info', SLOW: 'warn', DEADSTOCK: 'bad
 function viewDashboard() {
   return {
     shell: `${ro()}${loadNoteHTML}<div class="bar"><label class="mut">Tahun <select id="yr"></select></label></div><div id="dash"></div>`,
-    input(e) { if (e.target.id === 'yr') { F.dash.year = +e.target.value; this.fill(); } },
+    input(e) { if (e.target.id === 'yr') { F.dash.year = +e.target.value; this.fill(); } if (e.target.id === 'chym') { F.dash.ym = e.target.value; this.fill(); } },
     act(a) { if (a === 'target') return editTarget(F.dash.year); if (a === 'sample') loadSample(); if (a === 'wipe') wipeAll(); if (a === 'bkj') backupJSON(); if (a === 'bkx') backupXLSX(); if (a === 'restore') restoreBackup(); },
     fill() {
       const box = $('#dash'), parts = S.parts, yr = F.dash.year;
@@ -500,6 +572,7 @@ function viewDashboard() {
         <div class="card stat ${urgent.length ? 'bad' : ''}"><small>Perlu order (urgensi)</small><b>${fmtN(urgent.length)}</b></div>
         <div class="card stat"><small>PO customer terbuka</small><b>${fmtN(S.pos.filter(p => poInfo(p).open).length)}</b></div>
       </div>
+      ${dashChartsHTML()}
       <div class="row2">
         <div class="card"><h2>Total delivery per bulan ${yr} (qty)</h2>
           <div class="chart">${monthly.map((v, i) => `<div class="c"><div class="bars"><i title="${BULAN[i]}: ${fmtN(v)}" style="height:${v / mx * 100}%;background:var(--y);width:60%;max-width:34px"></i></div><small>${BULAN[i]}</small></div>`).join('')}</div>
@@ -568,7 +641,22 @@ async function loadSample() {
 }
 async function wipeAll() {
   if (!isFull) return denied();
-  const ok = await confirmBox('Hapus SEMUA data (spare part, transaksi, customer, supplier, PO)? Tindakan ini tidak bisa dibatalkan.', 'Hapus semua');
+  const ok = await new Promise(res => {
+    const m = modal(`<h3 style="color:var(--bad)">⚠ Hapus SEMUA data</h3>
+    <p>Seluruh <b>spare part, transaksi, customer, supplier, dan PO</b> akan dihapus permanen dan <b>tidak bisa dikembalikan</b> kecuali dari file backup.</p>
+    <p class="mut" style="font-size:13px">Disarankan unduh backup terlebih dahulu.</p>
+    <button type="button" class="btn" data-x="bk">Unduh backup lengkap (JSON) dulu</button>
+    <p style="margin:14px 0 6px">Untuk melanjutkan, ketik <b>HAPUS SEMUA</b> pada kolom di bawah:</p>
+    <input id="wcf" autocomplete="off" placeholder="HAPUS SEMUA" style="width:100%">
+    <div class="actions"><button type="button" class="btn" data-x="no">Batal</button><button type="button" class="btn danger" data-x="go" disabled>Hapus semua</button></div>`);
+    const inp = m.el.querySelector('#wcf'), go = m.el.querySelector('[data-x=go]'); let left = 5, done = false;
+    const upd = () => { const match = inp.value.trim() === 'HAPUS SEMUA'; go.disabled = !(match && left <= 0); go.textContent = left > 0 ? `Hapus semua (${left})` : 'Hapus semua'; };
+    const tm = setInterval(() => { left--; upd(); if (left <= 0) clearInterval(tm); }, 1000);
+    const fin = v => { if (done) return; done = true; clearInterval(tm); m.close(); res(v); };
+    inp.addEventListener('input', upd); upd(); inp.focus();
+    m.el.addEventListener('click', e => { const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'bk') backupJSON(); if (b.dataset.x === 'no') fin(false); if (b.dataset.x === 'go' && !go.disabled) fin(true); });
+    new MutationObserver(() => { if (!document.body.contains(m.el)) fin(false); }).observe(document.body, { childList: true, subtree: true });
+  });
   if (!ok) return;
   toast('Menghapus data…');
   await guarded(async () => {
