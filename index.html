@@ -50,7 +50,7 @@ h2{font-size:14px;margin:0 0 12px;font-weight:700}
 .bar .grow{flex:1}
 .bar input,.bar select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;min-width:0}
 .bar input[type=search]{min-width:220px}
-.btn{border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:8px 13px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap}
+.btn{border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:8px 13px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;text-align:center;line-height:1.25}
 .btn:hover{background:#f3f4f6}
 .btn.primary{background:var(--y);border-color:var(--y);color:var(--ink)}
 .btn.primary:hover{background:#e5a800}
@@ -83,7 +83,8 @@ table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-ove
 .empty{padding:36px 16px;text-align:center;color:var(--mut)}
 .in{color:var(--ok);font-weight:600}.out{color:var(--bad);font-weight:600}
 
-.pkm{max-width:640px}
+.modal.wide.pkm{max-width:640px}
+.modal.wide.xw{max-width:1180px}table.podt th{white-space:nowrap}table.podt td{white-space:nowrap}table.podt td.dsc{white-space:normal;min-width:220px;line-height:1.35}table.podt td,table.podt th{padding-left:10px;padding-right:10px}
 .pk-top{position:sticky;top:0;background:#fff;z-index:3;padding:6px 0 10px;border-bottom:1px solid var(--line);margin-bottom:10px}
 .pk-top .t{display:flex;justify-content:space-between;align-items:baseline;font-weight:700}.pk-top .t span{font-size:13px;color:var(--mut);font-weight:500}
 .pk-bar{height:10px;background:#eceef1;border-radius:6px;overflow:hidden;margin-top:6px}.pk-bar i{display:block;height:100%;background:#16a34a;transition:width .2s}
@@ -96,13 +97,14 @@ table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-ove
 .pkr.done{opacity:.5;background:#ecfdf3;border-left-color:#16a34a}.pkr.done .cb{background:#16a34a;border-color:#16a34a}.pkr.done .pn,.pkr.done .ds{text-decoration:line-through}
 .pkr .mid{grid-column:2}
 .pk-act{position:sticky;bottom:0;background:#fff;padding-top:10px;display:flex;gap:8px;flex-wrap:wrap}
-.pk-act .btn{flex:1;min-width:110px;padding:12px}
+.pk-act .btn{flex:1 1 130px;min-width:0;padding:12px 10px;white-space:normal;display:flex;align-items:center;justify-content:center;min-height:50px}
 @media(max-width:600px){.ov:has(.pkm){padding:0}.modal.pkm{border-radius:0;min-height:100%;max-width:none;padding:14px}}
 .ov{position:fixed;inset:0;background:rgba(15,17,22,.5);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px;overflow:auto;z-index:50}
 .modal{background:#fff;border-radius:12px;padding:20px;width:100%;max-width:560px;box-shadow:0 20px 50px rgba(0,0,0,.3)}
 .modal.wide{max-width:860px}
 .modal h3{margin:0 0 14px;font-size:17px}
-.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;flex-wrap:wrap}.modal .actions .btn{white-space:normal;min-height:36px}
+@media(max-width:600px){.bar .btn,.actions .btn{white-space:normal}}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
 .f{display:flex;flex-direction:column;gap:5px}
 .f.s2{grid-column:span 2}
@@ -1882,12 +1884,13 @@ function poDetail(id) {
   const dels = S.movements.filter(x => x.dir === 'out' && (x.poRef ? x.poRef.trim().toUpperCase() === po.poNo.trim().toUpperCase() : x.poId === id)).sort((a, b) => a.date.localeCompare(b.date));
   const m = modal(`<h3>PO ${esc(po.poNo)} <span class="chip ${inf.st.c}">${inf.st.k}</span></h3>
   <dl class="kv"><dt>Customer</dt><dd>${esc(c?.name || '—')}</dd><dt>Plant</dt><dd>${esc(po.plant) || '—'}</dd><dt>Tanggal PO</dt><dd>${fmtD(po.date)}</dd><dt>Catatan</dt><dd>${esc(po.note) || '—'}</dd><dt>Nilai PO</dt><dd>${fmtRp(inf.val)} <span class="mut">(qty × harga master part)</span></dd>${po.picked && inf.open ? `<dt>Picking</dt><dd><span class="chip info">SUDAH DIPICKING</span> <span class="mut">${esc(po.picked.by || '')} · ${fmtD((po.picked.at || '').slice(0, 10))} ${esc((po.picked.at || '').slice(11, 16))}</span></dd>` : ''}</dl>
-  <div class="tw"><table style="table-layout:fixed;min-width:860px"><colgroup><col style="width:3%"><col style="width:13%"><col style="width:26%"><col style="width:8%"><col style="width:5%"><col style="width:7%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:9%"><col style="width:9%"></colgroup><thead><tr><th>No</th><th>Part Number</th><th>Deskripsi</th><th>Bin</th><th class="n">Qty</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Free</th><th>KET</th><th>Status</th><th>Delivery</th></tr></thead><tbody>${inf.lines.map((l, i) => { const p = partMap.get(l.partId); return `<tr><td class="mut">${i + 1}</td><td class="mono" style="white-space:nowrap"><b>${p ? esc(p.partNo) : '(dihapus)'}</b></td><td>${esc(p?.name || '')}${l.req ? ` <span class="chip gray" style="margin-left:4px">${esc(l.req)}</span>` : ''}</td><td style="white-space:nowrap">${esc(p?.location || '')}</td><td class="n">${fmtN(l.qty)}</td><td class="n">${fmtN(l.d)}</td><td class="n"><b>${fmtN(l.sisa)}</b></td><td class="n">${fmtN(l.stk)}</td><td class="n ${l.free < 0 ? 'out' : ''}">${fmtN(l.free)}</td><td>${l.ket === 'C' ? 'C' : (l.kurang ? '<span class="out">-' + fmtN(l.kurang) + '</span>' : '')}</td><td><span class="chip ${l.st.c}">${l.st.k}</span></td><td><span class="chip ${l.dv === 'DELIVERED' ? 'ok' : l.dv === 'REQ DONE' ? 'info' : 'gray'}">${l.dv}</span></td></tr>`; }).join('')}</tbody></table></div>
+  <div class="tw"><table class="podt"><thead><tr><th>No</th><th>Part Number</th><th>Deskripsi</th><th>Bin</th><th class="n">Qty</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Free</th><th>KET</th><th>Status</th><th>Delivery</th></tr></thead><tbody>${inf.lines.map((l, i) => { const p = partMap.get(l.partId); return `<tr><td class="mut">${i + 1}</td><td class="mono" style="white-space:nowrap"><b>${p ? esc(p.partNo) : '(dihapus)'}</b></td><td class="dsc">${esc(p?.name || '')}${l.req ? ` <span class="chip gray" style="margin-left:4px">${esc(l.req)}</span>` : ''}</td><td style="white-space:nowrap">${esc(p?.location || '')}</td><td class="n">${fmtN(l.qty)}</td><td class="n">${fmtN(l.d)}</td><td class="n"><b>${fmtN(l.sisa)}</b></td><td class="n">${fmtN(l.stk)}</td><td class="n ${l.free < 0 ? 'out' : ''}">${fmtN(l.free)}</td><td>${l.ket === 'C' ? 'C' : (l.kurang ? '<span class="out">-' + fmtN(l.kurang) + '</span>' : '')}</td><td><span class="chip ${l.st.c}">${l.st.k}</span></td><td><span class="chip ${l.dv === 'DELIVERED' ? 'ok' : l.dv === 'REQ DONE' ? 'info' : 'gray'}">${l.dv}</span></td></tr>`; }).join('')}</tbody></table></div>
   ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td>${esc(x.kind)}</td><td>${esc(x.ekspedisi || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button>${inf.open && !inf.short && inf.lines.some(l => l.sisa > 0) ? '<button class="btn" data-x="pick">Picking List</button>' : ''}${canWrite && inf.open && !inf.short ? (po.picked ? '<button class="btn" data-x="unpicked">Batal tandai dipicking</button>' : '<button class="btn" data-x="picked">✓ Tandai sudah dipicking</button>') : ''}
   ${canWrite && inf.open ? '<button class="btn primary" data-x="send">Buat Barang Keluar</button>' : ''}${canPO ? '<button class="btn" data-x="edit">Edit</button>' : ''}
   ${canPO && po.status !== 'batal' && inf.st.k !== 'Selesai' ? '<button class="btn" data-x="cancel">Batalkan PO</button>' : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
   ${isFull ? '<button class="btn danger" data-x="del">Hapus</button>' : ''}<button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
+  m.el.classList.add('xw');
   m.el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
     if (x === 'c') m.close();
@@ -1969,7 +1972,7 @@ function openPicking(items) {
   <div id="pv"></div>
   <details style="margin:6px 0 4px"><summary class="mut" style="cursor:pointer;font-size:13px">Atur bin Gudang 2</summary>
     <label class="f" style="margin-top:8px"><span>Awalan bin yang termasuk Gudang 2 (pisahkan koma)</span><input id="g2" placeholder="mis. D, C, H, I, N, M, VALET GG2" value="${esc(getG2())}"></label></details>
-  <div class="pk-act">${canWrite ? (allPicked() ? `<button class="btn" data-x="unmark">Batal tandai${multi ? ' ' + items.length + ' PO' : ' PO'}</button>` : `<button class="btn" data-x="mark">✓ Tandai ${multi ? items.length + ' PO' : 'PO'} sudah dipicking</button>`) : ''}<button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
+  <div class="pk-act">${canWrite ? (allPicked() ? `<button class="btn" data-x="unmark">Batal tandai${multi ? ' ' + items.length + ' PO' : ' PO'}</button>` : `<button class="btn" data-x="mark">✓ Tandai ${multi ? items.length + ' PO' : 'PO'} dipicking</button>`) : ''}<button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('pkm');
   const el = m.el, rowsNow = () => pickRows(items, $('#g2', el).value), keyOf = r => r.partNo + '|' + r.bin;
   const draw = () => {
