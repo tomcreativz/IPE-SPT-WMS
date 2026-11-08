@@ -118,10 +118,10 @@ table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-ove
 .lines .lh{background:#fafafa;font-size:11.5px;text-transform:uppercase;color:var(--mut);font-weight:600}
 .lines .lr{border-top:1px solid #f0f1f3}
 .lines input{padding:7px 9px;border:1px solid #d1d5db;border-radius:6px;width:100%}
-.lines.tx .lh,.lines.tx .lr{grid-template-columns:1fr 90px 210px 32px}
+.lines.tx .lh,.lines.tx .lr{grid-template-columns:1fr 90px 90px 70px 70px 32px}.lines.tx .c{text-align:center}.lines.tx .lb{font-weight:600;white-space:nowrap}.lines.tx .lk,.lines.tx .lg{font-weight:600;font-variant-numeric:tabular-nums}
 .lines.po .lh,.lines.po .lr{grid-template-columns:1.6fr 80px 130px 1fr 32px}
 .lines.so .lh,.lines.so .lr{grid-template-columns:1fr 90px 110px 70px 70px 32px}.lines.so .c{text-align:center}.lines.so .lk,.lines.so .lg{font-weight:600;font-variant-numeric:tabular-nums}.lines.so .lg{color:#b45309}
-@media(max-width:700px){.grid{grid-template-columns:1fr}.f.s2{grid-column:span 1}.lines .lh{display:none}.lines.tx .lr,.lines.po .lr{grid-template-columns:1fr 1fr}.lines.so .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.so .lr .lp{grid-column:1/4}.lines.so .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.so .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lg::before{content:'Saran ';font-weight:400;font-size:11px;color:var(--mut)}}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.f.s2{grid-column:span 1}.lines .lh{display:none}.lines.po .lr{grid-template-columns:1fr 1fr}.lines.tx .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.tx .lr .lp{grid-column:1/4}.lines.tx .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.tx .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.tx .lg::before{content:'Free ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.so .lr .lp{grid-column:1/4}.lines.so .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.so .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lg::before{content:'Saran ';font-weight:400;font-size:11px;color:var(--mut)}}
 .err{color:var(--bad);font-size:12.5px;margin-top:10px;min-height:16px}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:99;align-items:center}
 #toast div{background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
@@ -782,17 +782,17 @@ function openTx(dir, preset = {}) {
     ${fld('AWB / Resi', 'awb', { val: preset.awb || '' })}
     ${fld('Remark', 'note', { val: preset.note || '' })}
   </div>
-  <div class="lines tx"><div class="lh"><span>Part number</span><span>Qty</span><span>Bin · Stok · Free</span><span></span></div><div id="ls"></div>
+  <div class="lines tx"><div class="lh"><span>Part number</span><span class="c">Qty</span><span class="c">Bin</span><span class="c">Stok</span><span class="c">Free</span><span></span></div><div id="ls"></div>
     <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO / SO</button>${dir === 'in' ? ' <button type="button" class="btn sm" data-x="paste">📋 Tempel tabel dari SAP</button>' : ''}</div></div>
   </form><div class="err" id="terr"></div>
   <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan transaksi</button></div>`, { wide: true });
   const el = m.el, f = $('#tx', el), ls = $('#ls', el), E = f.elements;
   const findPO = () => { const v = E.poRef.value.trim().toLowerCase(); return v ? S.pos.find(p => p.poNo.toLowerCase() === v && p.status !== 'batal') : null; };
-  function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `${p.location || '-'} · ${fmtN(stock(p.id))} · ${fmtN(stock(p.id) - (commit.get(p.id) || 0))}` : ''; }
+  function info(d) { const p = partFromText($('.lp', d).value), fr = p ? stock(p.id) - (commit.get(p.id) || 0) : 0; $('.lb', d).textContent = p ? (p.location || '-') : ''; $('.lk', d).textContent = p ? fmtN(stock(p.id)) : ''; const g = $('.lg', d); g.textContent = p ? fmtN(fr) : ''; g.style.color = fr < 0 ? '#b91c1c' : ''; }
   function addLine(pid = '', qty = '') {
     const p = pid ? (partMap.get(pid) || S.parts.find(x => x.id === pid)) : null;
     const d = document.createElement('div'); d.className = 'lr';
-    d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="li mut"></span><button type="button" class="btn sm" data-x="rm" title="Hapus baris">×</button>`;
+    d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="lb c"></span><span class="lk c"></span><span class="lg c"></span><button type="button" class="btn sm" data-x="rm" title="Hapus baris">×</button>`;
     ls.appendChild(d); info(d);
   }
   function fillPO() {
