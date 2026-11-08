@@ -43,6 +43,16 @@ nav .sep{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:#6b
 .stat b{font-size:24px;letter-spacing:-.5px}
 .stat.hl{border-left:4px solid var(--y)}
 
+.cards.kpi{grid-template-columns:repeat(5,minmax(0,1fr));align-items:stretch}
+.kpic{display:flex;flex-direction:column;min-height:112px;padding:16px 18px}
+.kpic small{font-size:11.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--mut);margin-bottom:8px}
+.kpic b{font-size:24px;line-height:1.15;white-space:nowrap}
+.kpic .ks{margin-top:auto;padding-top:8px;font-size:12px;color:var(--mut);line-height:1.35}.kpic .ks b{font-size:inherit;color:var(--ink);white-space:normal}
+.kpic.bad{border-left:4px solid #ef4444}.kpic.info{border-left:4px solid #3b82f6}.kpic.ok{border-left:4px solid #16a34a}.kpic.warn{border-left:4px solid #f59e0b}
+.kpic b .in,.kpic b .out{font-weight:700}.kpic b .mut2{color:#b6bcc7;font-weight:400}
+@media(max-width:1300px){.cards.kpi{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:860px){.cards.kpi{grid-template-columns:repeat(2,minmax(0,1fr))}.kpic b{font-size:21px}}
+@media(max-width:560px){.cards.kpi{grid-template-columns:1fr}}
 .chrow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .chrow .card,.chfull{margin:0}.chfull{margin-bottom:18px}
 .chcard h2{margin:0 0 2px;font-size:15px}.chcard .sub{color:var(--mut);font-size:12px;margin-bottom:10px}
@@ -119,6 +129,7 @@ table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-ove
 .pkr .cb{width:30px;height:30px;border:2.5px solid #9aa1ad;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;background:#fff;grid-column:1;grid-row:1}
 .pkr.done{opacity:.5;background:#ecfdf3;border-left-color:#16a34a}.pkr.done .cb{background:#16a34a;border-color:#16a34a}.pkr.done .pn,.pkr.done .ds{text-decoration:line-through}
 .pkr .mid{grid-column:2}
+.pkr.put .mid{display:flex;flex-direction:column}.pkr.put .pn{order:-1;font-size:20px;font-weight:800;line-height:1.15}.pkr.put .bin{order:1;font-size:17px;font-weight:800;margin-top:4px;color:#374151;min-width:0}.pkr.put .bin small{display:inline;margin-left:6px}.pkr.put .ds{order:2}
 .pk-act{position:sticky;bottom:0;background:#fff;padding-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 .pk-act .btn{flex:1 1 130px;min-width:0;padding:12px 10px;white-space:normal;display:flex;align-items:center;justify-content:center;min-height:50px}
 @media(max-width:600px){.ov:has(.pkm){padding:0}.modal.pkm{border-radius:0;min-height:100%;max-width:none;padding:14px}}
@@ -420,6 +431,7 @@ const errDetail = k => { const e = tblErr[k]; return e ? `<div style="margin-top
 const loadNoteHTML = '<div id="loadnote" class="banner warn" hidden>Data belum bisa dijangkau. Periksa koneksi internet; data yang tampil mungkin belum yang terbaru.</div>';
 const empty = (t) => `<div class="empty">${t}</div>`;
 
+const kpi = (label, val, sub, tone = '') => `<div class="card stat kpic ${tone}"><small>${label}</small><b>${val}</b><div class="ks">${sub}</div></div>`;
 /* ============ TARGET REVENUE ============ */
 const targetOf = yr => { const it = S.settings.find(x => x.key === 'target'); return +(it?.years?.[yr]) || 0; };
 const canTarget = () => myRole === 'staff' || myRole === 'manager';
@@ -428,7 +440,7 @@ function revCardHTML(rev, yr) {
   const edit = canTarget() && !setMissing ? `<button class="tgb" data-act="target" title="Atur target tahunan">${tg ? 'Ubah' : 'Atur target'}</button>` : '';
   return `<div class="card stat revcard"><div style="min-width:0"><small>Total revenue ${yr}</small><div class="rv">${fmtRp(rev)}</div>
     <small>vs target ${yr}</small><div class="tg">${tg ? fmtRp(tg) : 'Belum diatur'}${edit}</div></div>
-    <div class="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="${R}" fill="none" stroke="#3a3e48" stroke-width="9"/><circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--y)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${dash.toFixed(2)} ${C.toFixed(2)}"/></svg><span>${tg ? pct.toFixed(1) + '%' : '–'}</span></div></div>`;
+    <div class="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="${R}" fill="none" stroke="#3a3e48" stroke-width="9"/>${dash > 0.5 ? `<circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--y)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${dash.toFixed(2)} ${C.toFixed(2)}"/>` : ''}</svg><span>${tg ? pct.toFixed(1) + '%' : '–'}</span></div></div>`;
 }
 async function editTarget(yr) {
   if (!canTarget()) return denied();
@@ -562,15 +574,21 @@ function viewDashboard() {
       const urgent = [...A.values()].filter(a => a.urg === 'ORDER SEKARANG!' || a.urg === 'SEGERA ORDER').sort((a, b) => (a.urg < b.urg ? 1 : -1) || b.sug - a.sug);
       const recent = S.movements.slice().sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1)).slice(0, 8);
       const emptyDb = !parts.length && loaded.parts;
+      const stockSku = parts.filter(p => stock(p.id) > 0).length, urgNow = urgent.filter(a => a.urg === 'ORDER SEKARANG!').length, urgSoon = urgent.length - urgNow;
+      const poOpen = S.pos.filter(p => poInfo(p).open), poReady = poOpen.filter(p => { const i = poInfo(p); return !p.picked && i.short === 0 && i.lines.some(l => l.sisa > 0); }), poPicked = poOpen.filter(p => p.picked).length;
+      let mIn = 0, mOut = 0; for (const m of S.movements) { if ((m.date || '').slice(0, 7) !== curYM()) continue; if (m.dir === 'in') { if (!isOpening(m)) mIn += m.qty; } else mOut += m.qty; }
       box.innerHTML = `
       ${emptyDb ? `<div class="card" style="margin-bottom:16px"><h2>Selamat datang di WMS Gudang Sampit</h2><p class="mut" style="margin:0 0 12px">Database masih kosong. Mulai dengan menambah spare part satu per satu atau impor dari CSV di menu <b>Database Spare Part</b>. Anda juga bisa memuat data contoh untuk mencoba semua fitur.</p><div class="bar" style="margin:0"><a class="btn primary" href="#spare-part">Buka Database Spare Part</a>${canWrite ? '<button class="btn" data-act="sample">Muat data contoh</button>' : ''}${isFull ? '<button class="btn" data-act="restore">Pulihkan dari backup</button>' : ''}</div></div>` : ''}
-      <div class="cards">
+      <div class="cards kpi">
         ${revCardHTML(rev, yr)}
-        <div class="card stat"><small>Total stock value</small><b style="font-size:20px">${fmtRp(totVal)}</b></div>
-        <div class="card stat"><small>Total stock qty</small><b>${fmtN(totQty)}</b></div>
-        <div class="card stat"><small>Total delivery ${yr} (qty)</small><b>${fmtN(delQty)}</b></div>
-        <div class="card stat ${urgent.length ? 'bad' : ''}"><small>Perlu order (urgensi)</small><b>${fmtN(urgent.length)}</b></div>
-        <div class="card stat"><small>PO customer terbuka</small><b>${fmtN(S.pos.filter(p => poInfo(p).open).length)}</b></div>
+        ${kpi('Total stock value', fmtRp(totVal), fmtN(stockSku) + ' SKU berstok')}
+        ${kpi('Total stock qty', fmtN(totQty), fmtN(parts.length) + ' part terdaftar')}
+        ${kpi('Total delivery ' + yr, fmtN(delQty), 'Qty terkirim ke customer')}
+        ${kpi('Perlu order (urgensi)', fmtN(urgent.length), 'Order sekarang <b>' + fmtN(urgNow) + '</b> · Segera <b>' + fmtN(urgSoon) + '</b>', urgent.length ? 'bad' : '')}
+        ${kpi('PO customer terbuka', fmtN(poOpen.length), 'Lengkap <b>' + fmtN(poOpen.filter(p => poInfo(p).short === 0).length) + '</b> · Stok kurang <b>' + fmtN(poOpen.filter(p => poInfo(p).short > 0).length) + '</b>', 'info')}
+        ${kpi('PO siap picking', fmtN(poReady.length), 'Sudah dipicking <b>' + fmtN(poPicked) + '</b> dari PO terbuka', 'ok')}
+        ${kpi('Nilai dead stock', fmtRp(cat.DEADSTOCK.v), (totVal > 0 ? (cat.DEADSTOCK.v / totVal * 100).toFixed(1) : '0') + '% dari nilai stok · ' + fmtN(cat.DEADSTOCK.n) + ' SKU', cat.DEADSTOCK.v > 0 ? 'warn' : '')}
+        ${kpi('Transaksi ' + BLN_ID[+curYM().slice(5, 7) - 1].charAt(0) + BLN_ID[+curYM().slice(5, 7) - 1].slice(1).toLowerCase(), '<span class="in">+' + fmtN(mIn) + '</span> <span class="mut2">/</span> <span class="out">−' + fmtN(mOut) + '</span>', 'Qty masuk / keluar bulan berjalan')}
       </div>
       ${dashChartsHTML()}
       <div class="row2">
@@ -2210,7 +2228,7 @@ function openPutaway(moves) {
   const draw = () => {
     const rows = rowsNow(), dn = r => done.has(keyOf(r)), n = rows.filter(dn).length, q = rows.reduce((s, r) => s + r.qty, 0), qd = rows.filter(dn).reduce((s, r) => s + r.qty, 0);
     $('#pkc', el).textContent = `${n} / ${rows.length} disusun`; $('#pkq', el).textContent = `${fmtN(qd)} / ${fmtN(q)} pcs`; $('#pkb', el).style.width = (rows.length ? n / rows.length * 100 : 0) + '%';
-    $('#pv', el).innerHTML = rows.map(r => `<div class="pkr ${r.g2 ? 'g2' : ''} ${dn(r) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${dn(r) ? '✓' : ''}</div><div class="mid"><div class="bin">${noBin(r) ? '<span style="color:#dc2626">BELUM ADA BIN</span>' : esc(r.bin)}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}</div><div class="ds" style="font-size:12px;margin-top:3px">${r.refs.map(x => `<span class="chip gray" style="margin:0 4px 2px 0">${esc(x)}</span>`).join('')}</div>${noBin(r) && canWrite ? `<input class="nb" data-pid="${r.id}" placeholder="Ketik lokasi bin lalu Enter" style="margin-top:6px;width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px">` : ''}</div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
+    $('#pv', el).innerHTML = rows.map(r => `<div class="pkr put ${r.g2 ? 'g2' : ''} ${dn(r) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${dn(r) ? '✓' : ''}</div><div class="mid"><div class="bin">${noBin(r) ? '<span style="color:#dc2626">BELUM ADA BIN</span>' : esc(r.bin)}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}</div><div class="ds" style="font-size:12px;margin-top:3px">${r.refs.map(x => `<span class="chip gray" style="margin:0 4px 2px 0">${esc(x)}</span>`).join('')}</div>${noBin(r) && canWrite ? `<input class="nb" data-pid="${r.id}" placeholder="Ketik lokasi bin lalu Enter" style="margin-top:6px;width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px">` : ''}</div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
   };
   draw(); el.addEventListener('input', e => { if (e.target.id === 'g2') draw(); });
   el.addEventListener('change', async e => { const i = e.target.closest('.nb'); if (!i) return; const v = i.value.trim().toUpperCase(); if (!v) return; if (await guarded(() => db.doc('parts/' + i.dataset.pid).update({ location: v, updatedAt: nowISO() }))) { toast('Lokasi bin disimpan'); setTimeout(draw, 60); } });
