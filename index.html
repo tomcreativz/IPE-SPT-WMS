@@ -1407,15 +1407,16 @@ function upsertLocal(k, r) {
   const o = { id: r.id, ...(r.data || {}) }; const i = S[k].findIndex(x => x.id === r.id);
   if (i >= 0) S[k][i] = o; else S[k].push(o);
 }
+const TBL = k => (k === 'sorders' ? 'stockorders' : k);
 function makeDb() {
   const chk = (error, rows, what) => { if (error) throw error; if (rows && !rows.length) throw new Error('Tidak punya izin untuk ' + what); };
   return {
     collection: k => ({
-      async add(data) { const { data: r, error } = await sb.from(k).insert({ data }).select('id,data').single(); if (error) throw error; upsertLocal(k, r); schedule(); return { id: r.id }; },
+      async add(data) { const { data: r, error } = await sb.from(TBL(k)).insert({ data }).select('id,data').single(); if (error) throw error; upsertLocal(k, r); schedule(); return { id: r.id }; },
       async addMany(list) {
         const out = [];
         for (let i = 0; i < list.length; i += 500) {
-          const { data: rs, error } = await sb.from(k).insert(list.slice(i, i + 500).map(data => ({ data }))).select('id,data'); if (error) throw error;
+          const { data: rs, error } = await sb.from(TBL(k)).insert(list.slice(i, i + 500).map(data => ({ data }))).select('id,data'); if (error) throw error;
           rs.forEach(r => upsertLocal(k, r)); out.push(...rs);
         }
         schedule(); return out;
@@ -1426,11 +1427,11 @@ function makeDb() {
       return {
         async update(patch) {
           const cur = S[k].find(x => x.id === id) || {}; const { id: _i, ...rest } = cur; const nd = { ...rest, ...patch };
-          const { data, error } = await sb.from(k).update({ data: nd, updated_at: nowISO() }).eq('id', id).select('id'); chk(error, data, 'mengubah data');
+          const { data, error } = await sb.from(TBL(k)).update({ data: nd, updated_at: nowISO() }).eq('id', id).select('id'); chk(error, data, 'mengubah data');
           upsertLocal(k, { id, data: nd }); schedule();
         },
         async delete() {
-          const { data, error } = await sb.from(k).delete().eq('id', id).select('id'); chk(error, data, 'menghapus data');
+          const { data, error } = await sb.from(TBL(k)).delete().eq('id', id).select('id'); chk(error, data, 'menghapus data');
           S[k] = S[k].filter(x => x.id !== id); schedule();
         }
       };
@@ -1440,7 +1441,7 @@ function makeDb() {
 async function fetchAll(k) {
   const out = []; const step = 1000;
   for (let from = 0; ; from += step) {
-    const { data, error } = await sb.from(k).select('id,data').order('created_at', { ascending: true }).order('id').range(from, from + step - 1);
+    const { data, error } = await sb.from(TBL(k)).select('id,data').order('created_at', { ascending: true }).order('id').range(from, from + step - 1);
     if (error) throw error; out.push(...data); if (data.length < step) break;
   }
   return out;
@@ -1491,7 +1492,7 @@ async function start(session) {
   } catch (e) { console.error(e); loadFailed = true; }
   reindex(); route();
   const ch = sb.channel('wms-live');
-  for (const k of Object.keys(S).filter(k => !(k === 'sorders' && soMissing) && !(k === 'settings' && setMissing))) ch.on('postgres_changes', { event: '*', schema: 'public', table: k }, p => {
+  for (const k of Object.keys(S).filter(k => !(k === 'sorders' && soMissing) && !(k === 'settings' && setMissing))) ch.on('postgres_changes', { event: '*', schema: 'public', table: TBL(k) }, p => {
     if (p.eventType === 'DELETE') S[k] = S[k].filter(x => x.id !== p.old.id); else upsertLocal(k, p.new);
     schedule();
   });
