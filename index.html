@@ -206,6 +206,9 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtN = n => new Intl.NumberFormat('id-ID').format(n || 0);
 const fmtRp = n => 'Rp ' + fmtN(Math.round(n || 0));
+const cmp = n => { n = n || 0; const a = Math.abs(n), sg = n < 0 ? '-' : ''; const f = (v, u) => sg + (Math.round(v * 100) / 100).toLocaleString('id-ID', { maximumFractionDigits: 2 }) + ' ' + u; return a >= 1e12 ? f(a / 1e12, 'T') : a >= 1e9 ? f(a / 1e9, 'M') : a >= 1e6 ? f(a / 1e6, 'jt') : a >= 1e3 ? f(a / 1e3, 'rb') : sg + Math.round(a); };
+const fmtRpC = n => 'Rp ' + cmp(n);
+const rpC = n => `<span title="${fmtRp(n)}">${fmtRpC(n)}</span>`;
 const fmtD = iso => { if (!iso) return ''; const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
 const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
 const byText = (a, b) => String(a || '').localeCompare(String(b || ''), 'id');
@@ -438,8 +441,8 @@ const canTarget = () => myRole === 'staff' || myRole === 'manager';
 function revCardHTML(rev, yr) {
   const tg = targetOf(yr), pct = tg > 0 ? rev / tg * 100 : 0, R = 42, C = 2 * Math.PI * R, dash = C * Math.min(100, pct) / 100;
   const edit = canTarget() && !setMissing ? `<button class="tgb" data-act="target" title="Atur target tahunan">${tg ? 'Ubah' : 'Atur target'}</button>` : '';
-  return `<div class="card stat revcard"><div style="min-width:0"><small>Total revenue ${yr}</small><div class="rv">${fmtRp(rev)}</div>
-    <small>vs target ${yr}</small><div class="tg">${tg ? fmtRp(tg) : 'Belum diatur'}${edit}</div></div>
+  return `<div class="card stat revcard"><div style="min-width:0"><small>Total revenue ${yr}</small><div class="rv">${rpC(rev)}</div>
+    <small>vs target ${yr}</small><div class="tg">${tg ? rpC(tg) : 'Belum diatur'}${edit}</div></div>
     <div class="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="${R}" fill="none" stroke="#3a3e48" stroke-width="9"/>${dash > 0.5 ? `<circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--y)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${dash.toFixed(2)} ${C.toFixed(2)}"/>` : ''}</svg><span>${tg ? pct.toFixed(1) + '%' : '–'}</span></div></div>`;
 }
 async function editTarget(yr) {
@@ -478,11 +481,11 @@ function donutSVG(items) {
   return `<svg viewBox="0 0 200 200">${out}</svg>`;
 }
 function lineSVG(months, series) {
-  const W = 1000, H = 300, L = 92, Rr = 24, T = 14, B = 30, all = series.flatMap(s => s.vals), mx0 = Math.max(0, ...all), mn0 = Math.min(...all, 0);
+  const W = 1000, H = 300, L = 64, Rr = 24, T = 14, B = 30, all = series.flatMap(s => s.vals), mx0 = Math.max(0, ...all), mn0 = Math.min(...all, 0);
   const step = (() => { const raw = (mx0 - mn0) / 5 || 1, p = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; })();
   const lo = Math.floor(mn0 / step) * step, hi = Math.ceil(mx0 / step) * step || step, X = i => L + (months.length > 1 ? i * (W - L - Rr) / (months.length - 1) : (W - L - Rr) / 2), Y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
   let g = '';
-  for (let v = lo; v <= hi + 1e-6; v += step) g += `<line x1="${L}" x2="${W - Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#e5e7eb"/><text x="${L - 8}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="#6b7280">${fmtN(v)}</text>`;
+  for (let v = lo; v <= hi + 1e-6; v += step) g += `<line x1="${L}" x2="${W - Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#e5e7eb"/><text x="${L - 8}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="#6b7280">${cmp(v)}</text>`;
   months.forEach((ym, i) => g += `<text x="${X(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="12" fill="#6b7280">${(b => b[0] + b.slice(1).toLowerCase())(BULAN[+ym.slice(5, 7) - 1])}-${ym.slice(2, 4)}</text>`);
   for (const s of series) {
     const pts = s.vals.map((v, i) => [X(i), Y(v)]); let d = '';
@@ -508,7 +511,7 @@ function dashChartsHTML() {
   const leg = (items, tot) => `<div class="lg">${items.map(i => `<div class="lgi"><i style="background:${i.c}"></i>${esc(i.n)}<b>${Math.round(i.v / tot * 100)}%</b></div>`).join('')}</div>`;
   return `<div class="bar" style="margin-bottom:10px"><label class="mut">Bulan grafik <select id="chym">${months.slice().reverse().map(ym => `<option value="${ym}" ${ym === sel ? 'selected' : ''}>${ymLabel(ym)}</option>`).join('')}</select></label><span class="mut" style="font-size:12px">Stok akhir bulan terpilih; klasifikasi memakai analisis 6 bulan sebelumnya.</span></div>
   <div class="chrow">
-    <div class="card chcard"><h2>Nilai Stok per Kategori</h2><div class="sub">${ymLabel(sel)} · total ${fmtRp(catTot === 1 && !catItems.some(i => i.v) ? 0 : catTot)}</div><div class="dn">${donutSVG(catItems)}${leg(catItems, catTot)}</div></div>
+    <div class="card chcard"><h2>Nilai Stok per Kategori</h2><div class="sub">${ymLabel(sel)} · total ${fmtRpC(catTot === 1 && !catItems.some(i => i.v) ? 0 : catTot)}</div><div class="dn">${donutSVG(catItems)}${leg(catItems, catTot)}</div></div>
     <div class="card chcard"><h2>Jumlah SKU per Model</h2><div class="sub">${ymLabel(sel)} · SKU dengan stok &gt; 0</div><div class="dn">${donutSVG(modItems)}${leg(modItems, modTot)}</div></div>
   </div>
   <div class="card chcard chfull"><h2>Tren Nilai Stok per Kategori</h2><div class="sub">Nilai stok akhir bulan (Rp), ${months.length} bulan terakhir</div><div class="lgh">${trend.map(t => `<span><i style="background:${t.c}"></i>${t.n}</span>`).join('')}</div><div style="overflow-x:auto"><div style="min-width:640px">${lineSVG(months, trend)}</div></div></div>`;
@@ -581,13 +584,13 @@ function viewDashboard() {
       ${emptyDb ? `<div class="card" style="margin-bottom:16px"><h2>Selamat datang di WMS Gudang Sampit</h2><p class="mut" style="margin:0 0 12px">Database masih kosong. Mulai dengan menambah spare part satu per satu atau impor dari CSV di menu <b>Database Spare Part</b>. Anda juga bisa memuat data contoh untuk mencoba semua fitur.</p><div class="bar" style="margin:0"><a class="btn primary" href="#spare-part">Buka Database Spare Part</a>${canWrite ? '<button class="btn" data-act="sample">Muat data contoh</button>' : ''}${isFull ? '<button class="btn" data-act="restore">Pulihkan dari backup</button>' : ''}</div></div>` : ''}
       <div class="cards kpi">
         ${revCardHTML(rev, yr)}
-        ${kpi('Total stock value', fmtRp(totVal), fmtN(stockSku) + ' SKU berstok')}
+        ${kpi('Total stock value', rpC(totVal), fmtN(stockSku) + ' SKU berstok')}
         ${kpi('Total stock qty', fmtN(totQty), fmtN(parts.length) + ' part terdaftar')}
         ${kpi('Total delivery ' + yr, fmtN(delQty), 'Qty terkirim ke customer')}
         ${kpi('Perlu order (urgensi)', fmtN(urgent.length), 'Order sekarang <b>' + fmtN(urgNow) + '</b> · Segera <b>' + fmtN(urgSoon) + '</b>', urgent.length ? 'bad' : '')}
         ${kpi('PO customer terbuka', fmtN(poOpen.length), 'Lengkap <b>' + fmtN(poOpen.filter(p => poInfo(p).short === 0).length) + '</b> · Stok kurang <b>' + fmtN(poOpen.filter(p => poInfo(p).short > 0).length) + '</b>', 'info')}
         ${kpi('PO siap picking', fmtN(poReady.length), 'Sudah dipicking <b>' + fmtN(poPicked) + '</b> dari PO terbuka', 'ok')}
-        ${kpi('Nilai dead stock', fmtRp(cat.DEADSTOCK.v), (totVal > 0 ? (cat.DEADSTOCK.v / totVal * 100).toFixed(1) : '0') + '% dari nilai stok · ' + fmtN(cat.DEADSTOCK.n) + ' SKU', cat.DEADSTOCK.v > 0 ? 'warn' : '')}
+        ${kpi('Nilai dead stock', rpC(cat.DEADSTOCK.v), (totVal > 0 ? (cat.DEADSTOCK.v / totVal * 100).toFixed(1) : '0') + '% dari nilai stok · ' + fmtN(cat.DEADSTOCK.n) + ' SKU', cat.DEADSTOCK.v > 0 ? 'warn' : '')}
         ${kpi('Transaksi ' + BLN_ID[+curYM().slice(5, 7) - 1].charAt(0) + BLN_ID[+curYM().slice(5, 7) - 1].slice(1).toLowerCase(), '<span class="in">+' + fmtN(mIn) + '</span> <span class="mut2">/</span> <span class="out">−' + fmtN(mOut) + '</span>', 'Qty masuk / keluar bulan berjalan')}
       </div>
       ${dashChartsHTML()}
