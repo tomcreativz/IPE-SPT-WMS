@@ -160,7 +160,7 @@ let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
 let canWrite = false, canPO = false, isFull = false, loadFailed = false;
 let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
-const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '' }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true }, parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
+const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '' }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true }, parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
   kartu: { part: '', from: '', to: '' }, cust: { q: '' }, supp: { q: '' }, po: { q: '', st: '' } };
 
 const IN_TYPES = ['IN', 'RETURN CUSTOMER', 'SALDO AWAL', 'KOREKSI (+)'];
@@ -312,9 +312,7 @@ const ROUTES = [
   ['spare-part', 'Database Spare Part', viewParts],
   ['soh', 'SOH Bulanan', viewSOH],
   ['laporan-reorder', 'Laporan Re-order', viewReorder],
-  ['barang-masuk', 'Barang Masuk', () => viewMoves('in')],
-  ['barang-keluar', 'Barang Keluar', () => viewMoves('out')],
-  ['part-in-out', 'Laporan Part In-Out', () => viewMoves('all')],
+  ['transaksi', 'Transaksi Part In-Out', viewMoves],
   ['kartu-stok', 'Kartu Stok', viewKartu],
   ['cek-stok', 'Cek Stok', viewCek],
   ['purchase-order', 'Purchase Order', viewPO],
@@ -329,7 +327,9 @@ function buildNav() {
   $('#nav').innerHTML = ROUTES.filter(r => !r[3] || isFull).map(([h, t]) => `<a href="#${h}" data-h="${h}"><i></i>${t}</a>`).join('');
 }
 function route() {
-  const h = (location.hash || '#dashboard').slice(1);
+  let h = (location.hash || '#dashboard').slice(1);
+  const OLD = { 'barang-masuk': 'in', 'barang-keluar': 'out', 'part-in-out': '' };
+  if (h in OLD) { F.all.dir = OLD[h]; h = 'transaksi'; try { history.replaceState(null, '', '#transaksi'); } catch (e) { } }
   const r = ROUTES.find(x => x[0] === h && (!x[3] || isFull)) || ROUTES[0];
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.h === r[0]));
   $('#title').textContent = r[1];
@@ -663,39 +663,46 @@ function importParts() {
 /* ============ BARANG MASUK / KELUAR / PART IN-OUT ============ */
 const poText = m => m.poRef || poMap.get(m.poId)?.poNo || '';
 const isOpening = m => /saldo awal/i.test(m.kind || '');
-function viewMoves(mode) {
-  const st = F[mode]; let rows = [];
-  const kinds = mode === 'in' ? IN_TYPES : mode === 'out' ? OUT_TYPES : [...IN_TYPES, ...OUT_TYPES];
-  const label = mode === 'in' ? 'Barang Masuk' : mode === 'out' ? 'Barang Keluar' : 'Laporan Part In-Out';
+function viewMoves() {
+  const st = F.all; let rows = [];
+  const mode = () => st.dir || 'all';
+  const kindsOf = () => mode() === 'in' ? IN_TYPES : mode() === 'out' ? OUT_TYPES : [...IN_TYPES, ...OUT_TYPES];
+  const label = () => mode() === 'in' ? 'Barang Masuk' : mode() === 'out' ? 'Barang Keluar' : 'Transaksi Part In-Out';
+  const tabs = () => [['', 'Semua'], ['in', 'Masuk'], ['out', 'Keluar']].map(([k, t]) => `<button class="btn sm ${st.dir === k ? 'primary' : ''}" data-act="tab" data-id="${k}">${t}</button>`).join('');
   return {
     shell: `${ro()}${loadNoteHTML}
+    <div class="bar" id="tabs" style="gap:6px"></div>
     <div class="bar">
       <input type="search" id="q" placeholder="Cari part, no. dokumen, customer, PO, resi…" value="${esc(st.q)}">
-      <select id="kind"><option value="">Semua FORM/TO</option>${kinds.map(k => `<option ${st.kind === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>
+      <select id="kind"></select>
       <label class="mut">Dari <input type="date" id="from" value="${st.from}"></label>
       <label class="mut">Sampai <input type="date" id="to" value="${st.to}"></label>
       <span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
-      ${canWrite && mode !== 'out' ? '<button class="btn primary" data-act="addin">+ Barang Masuk</button>' : ''}${canWrite && mode !== 'in' ? '<button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
+      ${canWrite ? '<button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { const k = { q: 'q', kind: 'kind', from: 'from', to: 'to' }[e.target.id]; if (k) { st[k] = e.target.value; this.fill(); } },
     act(a, id) {
+      if (a === 'tab') { st.dir = id || ''; st.kind = ''; this.fill(); }
       if (a === 'addin') openTx('in');
       if (a === 'addout') openTx('out');
       if (a === 'del') delMove(id);
-      if (a === 'csv') exportCSV(mode === 'in' ? 'barang-masuk' : mode === 'out' ? 'barang-keluar' : 'part-in-out',
+      if (a === 'csv') exportCSV(mode() === 'in' ? 'barang-masuk' : mode() === 'out' ? 'barang-keluar' : 'part-in-out',
         [['TGL', 'PART NUMBER', 'FORM/CUSTOMER', 'BPB/GR/GI', 'IN', 'OUT', 'BIN', 'DETAIL', 'FORM/TO', 'EKSPEDISI', 'PO CUST/REQ', 'AWB/RESI', 'REMARK', 'DICATAT OLEH'],
           ...rows.slice().reverse().map(m => { const p = partMap.get(m.partId) || {}; return [fmtD(m.date), p.partNo, partyName(m), m.docNo, m.dir === 'in' ? m.qty : '', m.dir === 'out' ? m.qty : '', p.location, p.name, m.kind, m.ekspedisi, poText(m), m.awb, m.note, names[m.by] || '']; })]);
     },
     fill() {
       const q = st.q.toLowerCase();
-      rows = S.movements.filter(m => (mode === 'all' || m.dir === mode) && (!st.kind || m.kind === st.kind) && (!st.from || m.date >= st.from) && (!st.to || m.date <= st.to)
+      $('#tabs').innerHTML = tabs();
+      $('#kind').innerHTML = '<option value="">Semua FORM/TO</option>' + kindsOf().map(k => `<option ${st.kind === k ? 'selected' : ''}>${esc(k)}</option>`).join('');
+      $('#title').textContent = label();
+      rows = S.movements.filter(m => (mode() === 'all' || m.dir === mode()) && (!st.kind || m.kind === st.kind) && (!st.from || m.date >= st.from) && (!st.to || m.date <= st.to)
         && (!q || [m.docNo, m.kind, m.note, partyName(m), poText(m), m.ekspedisi, m.awb, partMap.get(m.partId)?.partNo, partMap.get(m.partId)?.name].join(' ').toLowerCase().includes(q)))
         .sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1));
       const tin = rows.reduce((s, m) => s + (m.dir === 'in' ? m.qty : 0), 0), tout = rows.reduce((s, m) => s + (m.dir === 'out' ? m.qty : 0), 0);
-      const sIn = mode !== 'out', sOut = mode !== 'in';
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n">In</th>' : ''}${sOut ? '<th class="n">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="5" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}</td>${sIn ? `<td class="n"><b>${fmtN(tin)}</b></td>` : ''}${sOut ? `<td class="n"><b>${fmtN(tout)}</b></td>` : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label.toLowerCase()} untuk filter ini.` : 'Memuat…');
+      const sIn = mode() !== 'out', sOut = mode() !== 'in';
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n">In</th>' : ''}${sOut ? '<th class="n">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="5" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}</td>${sIn ? `<td class="n"><b>${fmtN(tin)}</b></td>` : ''}${sOut ? `<td class="n"><b>${fmtN(tout)}</b></td>` : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label().toLowerCase()} untuk filter ini.` : 'Memuat…');
     }
   };
 }
@@ -1480,7 +1487,7 @@ function poDetail(id) {
     if (x === 'c') m.close();
     if (x === 'edit') { m.close(); poForm(id); }
     if (x === 'send') {
-      m.close(); location.hash = '#barang-keluar';
+      m.close(); F.all.dir = 'out'; location.hash = '#transaksi'; if (current && current.fill) route();
       setTimeout(() => openTx('out', { kind: 'SOLD CUSTOMER', party: c?.name || '', poRef: po.poNo, note: 'Pengiriman PO ' + po.poNo, lines: inf.lines.filter(l => l.sisa > 0).map(l => ({ partId: l.partId, qty: Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa })) }), 60);
     }
     if (x === 'cancel' || x === 'reopen') { if (await guarded(() => db.doc('pos/' + id).update({ status: x === 'cancel' ? 'batal' : 'aktif' }))) { m.close(); toast(x === 'cancel' ? 'PO dibatalkan' : 'PO diaktifkan'); } }
