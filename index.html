@@ -58,9 +58,10 @@ h2{font-size:14px;margin:0 0 12px;font-weight:700}
 .btn.sm{padding:4px 9px;font-size:12px}
 .btn.ghost{border-color:transparent;background:transparent;color:var(--info)}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
-.tw{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:auto}
+.tw{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:auto;max-height:calc(100vh - 190px)}
+.modal .tw{max-height:58vh}
 table{width:100%;border-collapse:collapse}
-th{background:#fafafa;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
+th{background:#fafafa;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;z-index:2;box-shadow:inset 0 -1px 0 #d9dde3}
 td{padding:10px 12px;border-bottom:1px solid #f0f1f3;vertical-align:middle}
 tr:last-child td{border-bottom:0}
 th,td{border-right:1px solid #e2e5ea}th:last-child,td:last-child{border-right:0}td{border-bottom-color:#e8eaee}
@@ -73,7 +74,7 @@ td.act{white-space:nowrap;text-align:right}
 .kc-info table{width:auto}.kc-info td{padding:2px 14px 2px 0;border:0;font-size:15px;color:#444}.kc-info td.v{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:#111;font-size:15px}
 .kc-logo{width:285px;border-left:2px solid #d9d6cf;display:flex;flex-direction:column;justify-content:center;padding:0 20px}.kc-logo .w{display:flex;align-items:center;gap:6px;font-weight:800;font-size:30px;letter-spacing:.5px;color:#1b2a4a}.kc-logo .w i{width:15px;height:15px;border-radius:50%;background:#111;display:inline-block}.kc-logo .w .y{color:#f5c400}.kc-logo small{font-size:10px;letter-spacing:2px;font-weight:700;color:#1b2a4a;margin-top:6px;max-width:170px}
 .kc-sum{display:flex;gap:14px;padding:18px 20px;background:#f7f5f1;border-bottom:1px solid #e5e2da;flex-wrap:wrap}.kc-sum>div{background:#fff;border:1px solid #dcd8cf;border-radius:8px;padding:10px 24px;text-align:center;min-width:130px}.kc-sum small{display:block;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#6b6b6b;font-weight:700}.kc-sum b{font-size:30px;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700}.kc-sum b.fin{color:#1b2a4a}
-.kc-tw{overflow:auto}table.kt{width:100%;border-collapse:collapse}table.kt th{background:#1b2a4a;color:#fff;font-size:12.5px;letter-spacing:1.5px;padding:15px 20px;position:sticky;top:0;border-right:1px solid #33456f}table.kt td{padding:14px 20px;border-bottom:1px solid #e3e0d8;border-right:1px solid #e3e0d8;font-size:16px}table.kt tbody tr:nth-child(even){background:#f7f5f1}table.kt td.d,table.kt td.rm{font-family:ui-monospace,Menlo,Consolas,monospace;color:#555;font-size:15px}table.kt td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;text-align:center}table.kt th.n{text-align:center}table.kt td.s{color:#1b2a4a}table.kt .z{color:#c9c6bd;font-weight:400}
+.kc-tw{overflow:auto;max-height:68vh}table.kt{width:100%;border-collapse:collapse}table.kt th{background:#1b2a4a;color:#fff;font-size:12.5px;letter-spacing:1.5px;padding:15px 20px;position:sticky;top:0;border-right:1px solid #33456f}table.kt td{padding:14px 20px;border-bottom:1px solid #e3e0d8;border-right:1px solid #e3e0d8;font-size:16px}table.kt tbody tr:nth-child(even){background:#f7f5f1}table.kt td.d,table.kt td.rm{font-family:ui-monospace,Menlo,Consolas,monospace;color:#555;font-size:15px}table.kt td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;text-align:center}table.kt th.n{text-align:center}table.kt td.s{color:#1b2a4a}table.kt .z{color:#c9c6bd;font-weight:400}
 @media(max-width:720px){.kc-logo{display:none}.kc-sum>div{flex:1;min-width:90px;padding:8px}.kc-sum b{font-size:22px}table.kt td,table.kt th{padding:10px 10px;font-size:13px}}
 
 table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-overflow:ellipsis}table.pt td.nw,table.pt th{white-space:nowrap}table.pt td.nm{white-space:normal;line-height:1.35}
@@ -408,9 +409,11 @@ function monthsBack(ym, n) {
   for (let i = 0; i < n; i++) { out.unshift(`${y}-${String(m).padStart(2, '0')}`); m--; if (m === 0) { m = 12; y--; } }
   return out;
 }
+// Window analisis = 6 bulan penuh SEBELUM bulan berjalan (mis. November -> Mei..Oktober, Desember -> Juni..November)
+function analysisWindow(ym) { let [y, m] = ym.split('-').map(Number); m--; if (m === 0) { m = 12; y--; } return monthsBack(`${y}-${String(m).padStart(2, '0')}`, 6); }
 const r1 = x => Math.round(x * 10) / 10;
 function analyze(ym, sohOf) {
-  const win = monthsBack(ym, 6), R = new Map();
+  const win = analysisWindow(ym), R = new Map();
   for (const p of S.parts) {
     const mm = dm.get(p.id) || new Map(), vals = win.map(k => mm.get(k) || 0);
     const T = vals.reduce((a, b) => a + b, 0), active = vals.filter(v => v > 0).length;
@@ -2274,7 +2277,7 @@ function viewReorder() {
       <select id="urg"><option value="">Semua urgensi</option>${['ORDER SEKARANG!', 'SEGERA ORDER', 'AMAN', 'STOK CUKUP', 'TIDAK BERGERAK'].map(s => `<option ${st.urg === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
       <label class="mut" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="act" ${st.active ? 'checked' : ''}> Sembunyikan yang tidak aktif</label>
       <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite ? '<button class="btn primary" data-act="mkso">Buat Stock Order dari saran</button>' : ''}</div>
-      <p class="mut" style="margin:-4px 0 12px;font-size:12.5px">Window analisis: 6 bulan sampai bulan terpilih. MIN = (SHIP + SS) × rata-rata, MAX = (SHIP + SS + FREQ) × rata-rata. SHIP, SS, FREQ (dalam bulan) diatur per part di Database Spare Part (default 1). Total available = stock free + incoming Stock Order.</p>
+      <p class="mut" style="margin:-4px 0 12px;font-size:12.5px">Window analisis: 6 bulan penuh sebelum bulan terpilih (mis. November → data Mei–Oktober, Desember → Juni–November). MIN = (SHIP + SS) × rata-rata, MAX = (SHIP + SS + FREQ) × rata-rata. SHIP, SS, FREQ (dalam bulan) diatur per part di Database Spare Part (default 1). Total available = stock free + incoming Stock Order.</p>
     <div class="tw"><div id="tbl"></div></div><div class="bar" style="margin-top:10px;justify-content:center" id="pg"></div>`,
     input(e) {
       const k = { ym: 'ym', q: 'q', mv: 'mv', urg: 'urg' }[e.target.id]; if (k) { if (k === 'ym' && !e.target.value) return; st[k] = e.target.value; }
