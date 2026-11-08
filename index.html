@@ -2177,18 +2177,22 @@ async function fetchAll(k) {
   }
   return out;
 }
+const MAIL_DOMAIN = () => ((window.WMS_CONFIG && window.WMS_CONFIG.EMAIL_DOMAIN) || 'gmail.com').replace(/^@/, '');
+const toEmail = u => { const t = String(u || '').trim().toLowerCase().replace(/\s+/g, ''); return t.includes('@') ? t : t + '@' + MAIL_DOMAIN(); };
+const lastUser = () => { try { return localStorage.getItem('wms-user') || ''; } catch (e) { return ''; } };
 function showLogin(msg) {
   const L = $('#login'); L.hidden = false;
   L.innerHTML = `<form class="box" id="lf"><h2>WMS Gudang Spare Part</h2><p>PT Indonesia Prima Equipment · Cabang Sampit</p>
-    ${fld('Email', 'email', { type: 'email', attrs: 'required autocomplete="username"' })}${fld('Password', 'password', { type: 'password', attrs: 'required autocomplete="current-password"' })}
+    ${fld('Nama pengguna', 'email', { type: 'text', val: lastUser(), ph: 'mis. bustomiyazid101', attrs: 'required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"' })}${fld('Password', 'password', { type: 'password', attrs: 'required autocomplete="current-password"' })}
     <div class="err" id="lerr">${esc(msg || '')}</div><button class="btn primary" type="submit">Masuk</button></form>`;
   $('#lf').onsubmit = async e => {
     e.preventDefault(); const v = Object.fromEntries(new FormData(e.target)); const btn = $('button', e.target); btn.disabled = true;
-    const { data, error } = await sb.auth.signInWithPassword({ email: v.email.trim(), password: v.password });
+    const { data, error } = await sb.auth.signInWithPassword({ email: toEmail(v.email), password: v.password });
+    try { if (!error) localStorage.setItem('wms-user', v.email.trim()); } catch (e2) { }
     if (error) {
       const m = String(error.message || '');
       let t = 'Gagal masuk: ' + m;
-      if (/invalid login credentials/i.test(m)) t = 'Email atau password salah (atau akun belum dibuat di Supabase).';
+      if (/invalid login credentials/i.test(m)) t = 'Nama pengguna atau password salah (atau akun belum dibuat di Supabase).';
       else if (/not confirmed/i.test(m)) t = 'Email belum dikonfirmasi. Di Supabase: Authentication > Users, buka akun ini lalu konfirmasi, atau buat ulang dengan "Auto Confirm User" dicentang.';
       else if (/api key|apikey|jwt/i.test(m)) t = 'Kunci API di config.js salah. Pakai anon/publishable key dari Project Settings > API.';
       else if (/failed to fetch|network|load failed/i.test(m)) t = 'Tidak bisa menghubungi Supabase. Periksa SUPABASE_URL di config.js dan koneksi internet.';
