@@ -1170,6 +1170,105 @@ function updateFromSOH() {
   });
 }
 
+/* ============ IMPOR PO CUSTOMER DARI SOH ============ */
+function importPOFromSOH() {
+  if (!canWrite) return denied();
+  if (!window.XLSX) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const m = modal(`<h3>Impor PO Customer dari file SOH</h3>
+  <p class="mut" style="margin-top:0">Membaca sheet <b>PO CUSTOMER</b> pada file SOH. Hanya menambah PO. <b>Tidak</b> mengubah stok atau transaksi. PO yang nomornya sudah ada di web dilewati, jadi file yang sama aman diimpor berulang.</p>
+  <input type="file" id="pf" accept=".xlsx,.xlsm"><div id="pprev" style="margin-top:12px"></div>
+  <div id="popts" hidden><label style="display:block;margin:10px 0 4px"><input type="checkbox" id="pc" checked> Buat customer yang belum ada di database</label></div>
+  <div class="err" id="perr2"></div><div id="pprog" class="mut"></div>
+  <div class="actions"><button class="btn" data-x="c">Tutup</button><button class="btn primary" data-x="go" disabled>Impor PO</button></div>`, { wide: true });
+  let P = null, plan = null, busy = false;
+  const makePlan = () => {
+    const have = new Set(S.pos.map(p => String(p.poNo || '').trim().toUpperCase())), pid = new Map(S.parts.map(p => [p.partNo.toUpperCase(), p.id]));
+    const cust = new Map(S.customers.map(c => [normName(c.name), c.id])); const fresh = [], dup = [], miss = new Map(); let lines = 0; const newCust = new Set();
+    for (const po of P.pos) {
+      if (have.has(po.poNo.trim().toUpperCase())) { dup.push(po.poNo); continue; }
+      const items = []; for (const i of po.items) { const id = pid.get(i.partNo); if (!id) { miss.set(i.partNo, (miss.get(i.partNo) || 0) + 1); continue; } items.push({ partId: id, qty: i.qty, ket: i.ket, req: i.req }); }
+      if (!items.length) continue; if (po.customer && !cust.has(normName(po.customer))) newCust.add(po.customer);
+      lines += items.length; fresh.push({ po, items });
+    }
+    return { fresh, dup, miss, lines, newCust: [...newCust] };
+  };
+  const render = () => {
+    plan = makePlan(); const pv = $('#pprev', m.el);
+    pv.innerHTML = `<div class="card" style="padding:12px;background:#fafafa"><b>${esc(P.title || 'File Excel')}</b><ul style="margin:8px 0 0;padding-left:18px;line-height:1.7">
+      <li>PO di file: <b>${fmtN(P.pos.length)}</b></li><li>PO baru yang akan diimpor: <b>${fmtN(plan.fresh.length)}</b> (${fmtN(plan.lines)} baris part)</li>
+      <li>Sudah ada di web (dilewati): <b>${fmtN(plan.dup.length)}</b></li><li>Customer baru: <b>${fmtN(plan.newCust.length)}</b>${plan.newCust.length ? ' — ' + plan.newCust.slice(0, 4).map(esc).join(', ') + (plan.newCust.length > 4 ? '…' : '') : ''}</li></ul>
+      ${plan.miss.size ? `<p class="out" style="margin:8px 0 0;font-size:12.5px">${fmtN([...plan.miss.values()].reduce((a, b) => a + b, 0))} baris dilewati karena nomor part tidak ada di database: ${[...plan.miss.keys()].slice(0, 5).map(esc).join(', ')}${plan.miss.size > 5 ? '…' : ''}</p>` : ''}</div>
+      ${plan.fresh.length ? `<div class="tw" style="max-height:200px;margin-top:8px"><table><thead><tr><th>Tgl</th><th>No. PO/QT</th><th>Customer</th><th>Plant</th><th class="n">Baris</th></tr></thead><tbody>${plan.fresh.slice(0, 40).map(x => `<tr><td>${fmtD(x.po.date)}</td><td class="mono"><b>${esc(x.po.poNo)}</b></td><td>${esc(x.po.customer)}</td><td>${esc(x.po.plant)}</td><td class="n">${x.items.length}</td></tr>`).join('')}</tbody></table></div>` : '<p class="in" style="margin:8px 0 0">Tidak ada PO baru untuk diimpor.</p>'}`;
+    $('[data-x=go]', m.el).disabled = !plan.fresh.length;
+  };
+  $('#pf', m.el).addEventListener('change', async ev => {
+    const f = ev.target.files[0]; if (!f) return; $('#perr2', m.el).textContent = ''; $('#pprev', m.el).textContent = 'Membaca file…'; await new Promise(r => setTimeout(r, 30));
+    try { P = parseSOH(window.XLSX, window.XLSX.read(await f.arrayBuffer(), { type: 'array' })); $('#popts', m.el).hidden = false; render(); }
+    catch (e) { console.error(e); P = null; $('#pprev', m.el).textContent = ''; $('#perr2', m.el).textContent = 'Gagal membaca file: ' + (e.message || e); }
+  });
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b || busy) return;
+    if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go' && plan) {
+      busy = true; b.disabled = true; const pg = $('#pprog', m.el), t = nowISO(), imp = 'soh-po';
+      try {
+        const cust = new Map(S.customers.map(c => [normName(c.name), c.id]));
+        if ($('#pc', m.el).checked && plan.newCust.length) {
+          pg.textContent = 'Membuat customer…';
+          const plants = new Map(); for (const x of plan.fresh) if (x.po.plant) { const k = normName(x.po.customer); (plants.get(k) || plants.set(k, new Set()).get(k)).add(x.po.plant); }
+          for (const r of await db.collection('customers').addMany(plan.newCust.map(n => ({ name: n, pic: '', phone: '', email: '', city: '', address: '', note: '', plants: [...(plants.get(normName(n)) || [])].join(', '), createdAt: t, createdBy: uid, imp })))) cust.set(normName(r.data.name), r.id);
+        }
+        pg.textContent = `Mengimpor ${fmtN(plan.fresh.length)} PO…`;
+        await db.collection('pos').addMany(plan.fresh.map(x => ({ poNo: x.po.poNo, customerId: cust.get(normName(x.po.customer)) || '', plant: x.po.plant, date: x.po.date || today(), note: '', status: 'aktif', items: x.items, createdAt: t, createdBy: uid, imp })));
+        toast(`${fmtN(plan.fresh.length)} PO diimpor`); m.close();
+      } catch (err) { console.error(err); $('#perr2', m.el).textContent = 'Impor berhenti: ' + (err.message || err.code || err); busy = false; b.disabled = false; }
+    }
+  });
+}
+
+/* ============ IMPOR STOCK ORDER DARI SOH ============ */
+function importSOFromSOH() {
+  if (!canWrite) return denied();
+  if (soMissing) { toast('Tabel Stock Order belum ada di database (lihat panduan).', 'err'); return; }
+  if (!window.XLSX) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const m = modal(`<h3>Impor Stock Order dari file SOH</h3>
+  <p class="mut" style="margin-top:0">Membaca sheet <b>STOCK ORDER</b> pada file SOH. Hanya menambah baris Stock Order; stok dan transaksi tidak berubah. Baris yang sudah ada di web (tanggal, part, dan periode sama) dilewati, jadi file yang sama aman diimpor berulang. Kode “C” di Excel menjadi status DONE.</p>
+  <input type="file" id="sof" accept=".xlsx,.xlsm"><div id="soprev" style="margin-top:12px"></div><div class="err" id="soerr"></div><div id="soprog" class="mut"></div>
+  <div class="actions"><button class="btn" data-x="c">Tutup</button><button class="btn primary" data-x="go" disabled>Impor Stock Order</button></div>`, { wide: true });
+  let P = null, plan = null, busy = false;
+  const makePlan = () => {
+    const pid = new Map(S.parts.map(p => [p.partNo.toUpperCase(), p.id])), key = (d, id, per) => `${d}|${id}|${String(per || '').trim().toUpperCase()}`;
+    const have = new Map(); for (const l of S.sorders) { const k = key(l.date, l.partId, l.period); have.set(k, (have.get(k) || 0) + 1); }
+    const fresh = [], miss = new Map(); let dup = 0;
+    for (const l of P.so) {
+      const id = pid.get(l.partNo); if (!id) { miss.set(l.partNo, (miss.get(l.partNo) || 0) + 1); continue; }
+      const k = key(l.date, id, l.period), n = have.get(k) || 0; if (n > 0) { have.set(k, n - 1); dup++; continue; }
+      fresh.push({ ...l, partId: id });
+    }
+    return { fresh, dup, miss };
+  };
+  const render = () => {
+    plan = makePlan(); const per = new Map(); for (const l of plan.fresh) per.set(l.period, (per.get(l.period) || 0) + 1);
+    $('#soprev', m.el).innerHTML = `<div class="card" style="padding:12px;background:#fafafa"><b>${esc(P.title || 'File Excel')}</b><ul style="margin:8px 0 0;padding-left:18px;line-height:1.7"><li>Baris di file: <b>${fmtN(P.so.length)}</b></li><li>Baris baru yang akan diimpor: <b>${fmtN(plan.fresh.length)}</b>${per.size ? ' — ' + [...per.entries()].map(([k, v]) => `${esc(k)}: ${v}`).join(', ') : ''}</li><li>Sudah ada di web (dilewati): <b>${fmtN(plan.dup)}</b></li></ul>
+    ${plan.miss.size ? `<p class="out" style="margin:8px 0 0;font-size:12.5px">${fmtN([...plan.miss.values()].reduce((a, b) => a + b, 0))} baris dilewati karena nomor part tidak ada di database: ${[...plan.miss.keys()].slice(0, 5).map(esc).join(', ')}${plan.miss.size > 5 ? '…' : ''}</p>` : ''}${plan.fresh.length ? '' : '<p class="in" style="margin:8px 0 0">Tidak ada baris baru untuk diimpor.</p>'}</div>`;
+    $('[data-x=go]', m.el).disabled = !plan.fresh.length;
+  };
+  $('#sof', m.el).addEventListener('change', async ev => {
+    const f = ev.target.files[0]; if (!f) return; $('#soerr', m.el).textContent = ''; $('#soprev', m.el).textContent = 'Membaca file…'; await new Promise(r => setTimeout(r, 30));
+    try { P = parseSOH(window.XLSX, window.XLSX.read(await f.arrayBuffer(), { type: 'array' })); render(); }
+    catch (e) { console.error(e); P = null; $('#soprev', m.el).textContent = ''; $('#soerr', m.el).textContent = 'Gagal membaca file: ' + (e.message || e); }
+  });
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b || busy) return;
+    if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go' && plan) {
+      busy = true; b.disabled = true; $('#soprog', m.el).textContent = `Mengimpor ${fmtN(plan.fresh.length)} baris…`;
+      try { const t = nowISO(); await db.collection('sorders').addMany(plan.fresh.map(l => ({ date: l.date || today(), period: l.period, partId: l.partId, req: l.req, done: l.done, by: uid, at: t, imp: 'soh-so' }))); toast(`${fmtN(plan.fresh.length)} baris Stock Order diimpor`); m.close(); }
+      catch (err) { console.error(err); $('#soerr', m.el).textContent = 'Impor berhenti: ' + (err.message || err.code || err); busy = false; b.disabled = false; }
+    }
+  });
+}
+
 /* ============ TUTUP BULAN ============ */
 function monthStats(ym) {
   const R = computeSOH(ym), start = ym + '-01', end = ym + '-31';
@@ -1403,11 +1502,12 @@ function viewPO() {
     shell: `${ro(true)}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
       <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan', 'Stok kurang'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
+      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; this.fill(); },
     act(a, id) {
       if (a === 'add') poForm();
+      if (a === 'xpo') importPOFromSOH();
       if (a === 'view') poDetail(id);
       if (a === 'csv') exportCSV('po-customer', [['TGL PO', 'NOMOR PO/QT', 'PLANT', 'PART NUMBER', 'CUSTOMER', 'BIN', 'DETAIL', 'QTY', 'KET', 'FREE', 'STOCK', 'STATUS', 'DELIVERY', 'REQ'],
         ...rows.flatMap(p => poInfo(p).lines.map(l => { const pt = partMap.get(l.partId) || {}; return [fmtD(p.date), p.poNo, p.plant || '', pt.partNo, custMap.get(p.customerId)?.name || '', pt.location, pt.name, l.qty, l.ket === 'C' ? 'C' : (l.kurang ? -l.kurang : ''), l.free, l.stk, l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k, l.dv, l.req || '']; }))]);
@@ -1521,11 +1621,12 @@ function viewSO() {
     shell: `${soMissing ? `<div class="banner warn">Tabel Stock Order belum terbaca dari database. Jalankan <b>supabase-tambah-stockorder.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.${errDetail('sorders')}</div>` : ''}${ro()}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari part number / deskripsi…" value="${esc(F.so.q)}"><select id="per"></select>
       <select id="st"><option value="">Semua status</option>${['BELUM', 'SEBAGIAN', 'DONE'].map(s => `<option ${F.so.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && !soMissing ? '<button class="btn primary" data-act="add">+ Stock Order</button>' : ''}</div>
+      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && !soMissing ? '<button class="btn" data-act="xso">Impor SO dari SOH</button><button class="btn primary" data-act="add">+ Stock Order</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { if (e.target.id === 'q') F.so.q = e.target.value; if (e.target.id === 'per') F.so.per = e.target.value; if (e.target.id === 'st') F.so.st = e.target.value; this.fill(); },
     act(a, id) {
       if (a === 'add') soForm();
+      if (a === 'xso') importSOFromSOH();
       if (a === 'del') delSO(id);
       if (a === 'done') guarded(() => db.doc('sorders/' + id).update({ done: !S.sorders.find(x => x.id === id)?.done })).then(ok => ok && toast('Status diperbarui'));
       if (a === 'csv') exportCSV('stock-order', [['TGL', 'PN', 'DESCRIPTION', 'PERIODE SO', 'MOVEMENT', 'REQ SO', 'DITERIMA', 'SISA', 'STATUS'], ...rows.map(l => { const p = partMap.get(l.partId) || {}, i = soLineInfo(l); return [fmtD(l.date), p.partNo, p.name, l.period, analysisNow().get(l.partId)?.mv || '', l.req, i.rec, i.sisa, i.st]; })]);
