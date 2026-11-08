@@ -513,7 +513,7 @@ function viewParts() {
       <select id="st"><option value="">Semua status</option><option value="Aman">Aman</option><option value="Menipis">Menipis</option><option value="Habis">Habis</option></select>
       <span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
-      ${canWrite ? '<button class="btn" data-act="import">Impor CSV</button><button class="btn" data-act="xl">Impor Excel SOH</button><button class="btn" data-act="xk">Impor Kartu Stok</button><button class="btn primary" data-act="add">+ Spare Part</button>' : ''}
+      ${canWrite ? '<button class="btn" data-act="import">Impor CSV</button><button class="btn" data-act="xl">Impor Excel SOH</button><button class="btn" data-act="xk">Impor Kartu Stok</button><button class="btn" data-act="xu">Perbarui Harga/Model dari SOH</button><button class="btn primary" data-act="add">+ Spare Part</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
     bind() { $('#st').value = F.parts.st; },
@@ -531,6 +531,7 @@ function viewParts() {
       if (a === 'import') importParts();
       if (a === 'xl') importExcel();
       if (a === 'xk') importKartu();
+      if (a === 'xu') updateFromSOH();
       if (a === 'csv') exportCSV('spare-part', [['No. Part', 'Nama', 'Kategori', 'Model/Aplikasi', 'Satuan', 'Lokasi Rak', 'Supplier', 'Stok', 'Stok Minimum', 'Harga (Rp)', 'Nilai Stok (Rp)', 'Status'], ...rows.map(p => [p.partNo, p.name, p.category, p.model, p.unit, p.location, suppMap.get(p.supplierId)?.name || '', stock(p.id), p.minStock, p.price, stock(p.id) * (p.price || 0), partStatus(p).k])]);
     },
     fill() {
@@ -879,7 +880,8 @@ async function runImport(P, o, prog) {
 function importExcel() {
   if (!canWrite) return denied();
   if (!window.XLSX) { toast('Pustaka pembaca Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
-  const hasTx = S.movements.length > 0;
+  if (S.movements.length > 0) { const mm = modal(`<h3>Impor Excel SOH tidak tersedia</h3><p>Database sudah berisi transaksi, sehingga mengimpor file SOH akan menggandakan stok dan transaksi.</p><ul style="line-height:1.7"><li>Untuk memperbarui <b>harga, model, SHIP/SS/FREQ</b>: gunakan tombol <b>Perbarui Harga/Model dari SOH</b>.</li><li>Untuk memasukkan riwayat dari file KARTU STOK: gunakan <b>Impor Kartu Stok</b> (database harus kosong).</li></ul><div class="actions"><button class="btn primary" data-x="c">Mengerti</button></div>`); mm.el.addEventListener('click', e => { if (e.target.closest('[data-x]')) mm.close(); }); return; }
+  const hasTx = false;
   const m = modal(`<h3>Impor dari Excel SOH SPT</h3>
   <p class="mut" style="margin-top:0">Pilih file Excel SOH (sheet DATA SOH, REPORTS, PART IN-OUT, PO CUSTOMER, STOCK ORDER, DATABASE). File dibaca di browser Anda; tidak ada yang dikirim ke pihak lain selain ke database Anda.</p>
   <input type="file" id="xf" accept=".xlsx,.xlsm"><div id="xprev" style="margin-top:12px"></div>
@@ -1106,6 +1108,58 @@ function exportSOH(ym) {
   const buf = X.write(wb, { bookType: 'xlsx', type: 'array' });
   saveFile(`${title}.xlsx`, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   return { sheets: wb.SheetNames, rows: { soh: dSoh.length, rep: dRep.length, io: dIO.length, po: dPO.length, so: dSO.length }, wb };
+}
+
+/* ============ PERBARUI HARGA & MODEL DARI SOH ============ */
+function updateFromSOH() {
+  if (!canWrite) return denied();
+  if (!window.XLSX) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const m = modal(`<h3>Perbarui harga & model dari file SOH</h3>
+  <p class="mut" style="margin-top:0">Hanya mengubah data spare part yang <b>sudah ada</b> (cocok berdasarkan nomor part). <b>Tidak</b> menambah transaksi, stok, PO, atau customer, jadi aman dipakai kapan saja. Sel yang kosong di Excel tidak akan menimpa data yang sudah terisi.</p>
+  <input type="file" id="uf" accept=".xlsx,.xlsm"><div id="uprev" style="margin-top:12px"></div>
+  <div id="uopts" hidden>
+    <label style="display:block;margin:8px 0 4px"><input type="checkbox" id="up" checked> Harga</label>
+    <label style="display:block;margin:4px 0"><input type="checkbox" id="um" checked> Model/aplikasi</label>
+    <label style="display:block;margin:4px 0"><input type="checkbox" id="us" checked> SHIP / SS / FREQ (parameter re-order)</label>
+    <label style="display:block;margin:4px 0"><input type="checkbox" id="ub"> Bin location dan supersession</label>
+  </div><div class="err" id="uerr"></div><div id="uprog" class="mut"></div>
+  <div class="actions"><button class="btn" data-x="c">Tutup</button><button class="btn primary" data-x="go" disabled>Perbarui</button></div>`, { wide: true });
+  let P = null, busy = false;
+  const diffs = o => {
+    const by = new Map(S.parts.map(p => [p.partNo.toUpperCase(), p])), out = []; let missing = 0;
+    for (const x of P.parts) {
+      const p = by.get(x.partNo); if (!p) { missing++; continue; } const patch = {};
+      if (o.p && x.price > 0 && x.price !== (p.price || 0)) patch.price = x.price;
+      if (o.m && x.model && x.model !== (p.model || '')) patch.model = x.model;
+      if (o.s) { if (x.ship !== (p.ship ?? 1)) patch.ship = x.ship; if (x.ss !== (p.ss ?? 1)) patch.ss = x.ss; if (x.freq !== (p.freq ?? 1)) patch.freq = x.freq; }
+      if (o.b) { if (x.location && x.location !== (p.location || '')) patch.location = x.location; if (x.supersession && x.supersession !== (p.supersession || '')) patch.supersession = x.supersession; }
+      if (Object.keys(patch).length) out.push({ p, patch });
+    }
+    return { out, missing };
+  };
+  const opts = () => ({ p: $('#up', m.el).checked, m: $('#um', m.el).checked, s: $('#us', m.el).checked, b: $('#ub', m.el).checked });
+  const render = () => {
+    const d = diffs(opts()), pv = $('#uprev', m.el);
+    pv.innerHTML = `<div class="card" style="padding:12px;background:#fafafa"><b>${esc(P.title || 'File Excel')}</b><ul style="margin:8px 0 0;padding-left:18px;line-height:1.7"><li>Part di file: <b>${fmtN(P.parts.length)}</b> · belum ada di web (dilewati): <b>${fmtN(d.missing)}</b></li><li>Part yang akan berubah: <b>${fmtN(d.out.length)}</b></li></ul>
+    ${d.out.length ? `<div class="tw" style="max-height:200px;margin-top:8px"><table><thead><tr><th>Part</th><th>Perubahan</th></tr></thead><tbody>${d.out.slice(0, 30).map(x => `<tr><td class="mono"><b>${esc(x.p.partNo)}</b></td><td class="mut">${Object.entries(x.patch).map(([k, v]) => `${k}: ${esc(String(x.p[k] ?? ''))} → <b>${esc(String(v))}</b>`).join(' · ')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="in" style="margin:8px 0 0">Tidak ada perbedaan: data spare part sudah sama.</p>'}</div>`;
+    $('[data-x=go]', m.el).disabled = !d.out.length;
+  };
+  $('#uf', m.el).addEventListener('change', async ev => {
+    const f = ev.target.files[0]; if (!f) return; $('#uerr', m.el).textContent = ''; $('#uprev', m.el).textContent = 'Membaca file…'; await new Promise(r => setTimeout(r, 30));
+    try { P = parseSOH(window.XLSX, window.XLSX.read(await f.arrayBuffer(), { type: 'array' })); $('#uopts', m.el).hidden = false; render(); }
+    catch (e) { console.error(e); P = null; $('#uprev', m.el).textContent = ''; $('#uerr', m.el).textContent = 'Gagal membaca file: ' + (e.message || e); }
+  });
+  m.el.addEventListener('change', e => { if (P && e.target.matches('#uopts input')) render(); });
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b || busy) return;
+    if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go' && P) {
+      const list = diffs(opts()).out; busy = true; b.disabled = true; const pg = $('#uprog', m.el); let n = 0, fail = 0;
+      const worker = async () => { while (list.length) { const x = list.shift(); try { await db.doc('parts/' + x.p.id).update({ ...x.patch, updatedAt: nowISO() }); } catch (err) { console.error(err); fail++; } pg.textContent = `Memperbarui… ${fmtN(++n)}`; } };
+      await Promise.all([worker(), worker(), worker(), worker(), worker()]);
+      toast(fail ? `Selesai: ${fmtN(n - fail)} diperbarui, ${fmtN(fail)} gagal` : `${fmtN(n)} spare part diperbarui`, fail ? 'err' : undefined); m.close();
+    }
+  });
 }
 
 /* ============ TUTUP BULAN ============ */
