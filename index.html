@@ -66,6 +66,7 @@ tr:last-child td{border-bottom:0}
 th,td{border-right:1px solid #e2e5ea}th:last-child,td:last-child{border-right:0}td{border-bottom-color:#e8eaee}
 tbody tr:hover{background:#fcfcfd}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+th.q3,td.q3{width:1px;white-space:nowrap;padding-left:6px;padding-right:6px}
 td.act{white-space:nowrap;text-align:right}
 .kc{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
 .kc-head{display:flex;border-bottom:3px solid #d9d6cf}.kc-info{flex:1;padding:18px 22px 14px}.kc-info h3{margin:0;font-size:19px;letter-spacing:2px;text-decoration:underline;text-underline-offset:4px;font-family:ui-monospace,Menlo,Consolas,monospace}.kc-info .sub{color:#555;margin:6px 0 12px}
@@ -721,7 +722,7 @@ function viewMoves() {
       <button class="btn" data-act="thismonth">Bulan ini</button>
       <span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
-      ${canWrite ? '<button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
+      ${canWrite ? '<button class="btn" data-act="putaway">Putaway List</button><button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { const k = { q: 'q', kind: 'kind', from: 'from', to: 'to' }[e.target.id]; if (k) { st[k] = e.target.value; this.fill(); } },
@@ -732,6 +733,7 @@ function viewMoves() {
         st.from = t.slice(0, 8) + '01'; st.to = t.slice(0, 8) + String(last).padStart(2, '0');
         $('#from').value = st.from; $('#to').value = st.to; this.fill();
       }
+      if (a === 'putaway') putawaySelect();
       if (a === 'addin') openTx('in');
       if (a === 'addout') openTx('out');
       if (a === 'del') delMove(id);
@@ -749,7 +751,7 @@ function viewMoves() {
         .sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1));
       const tin = rows.reduce((s, m) => s + (m.dir === 'in' ? m.qty : 0), 0), tout = rows.reduce((s, m) => s + (m.dir === 'out' ? m.qty : 0), 0);
       const sIn = mode() !== 'out', sOut = mode() !== 'in';
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n">In</th>' : ''}${sOut ? '<th class="n">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="5" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}</td>${sIn ? `<td class="n"><b>${fmtN(tin)}</b></td>` : ''}${sOut ? `<td class="n"><b>${fmtN(tout)}</b></td>` : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label().toLowerCase()} untuk filter ini.` : 'Memuat…');
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n q3">In</th>' : ''}${sOut ? '<th class="n q3">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n q3 in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n q3 out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="5" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}${sIn ? ` · Total IN <b class="in">${fmtN(tin)}</b>` : ''}${sOut ? ` · Total OUT <b class="out">${fmtN(tout)}</b>` : ''}</td>${sIn ? '<td class="q3"></td>' : ''}${sOut ? '<td class="q3"></td>' : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label().toLowerCase()} untuk filter ini.` : 'Memuat…');
     }
   };
 }
@@ -781,14 +783,14 @@ function openTx(dir, preset = {}) {
     ${fld('Remark', 'note', { val: preset.note || '' })}
   </div>
   <div class="lines tx"><div class="lh"><span>Part number</span><span>Qty</span><span>Bin · Stok · Free</span><span></span></div><div id="ls"></div>
-    <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO / SO</button></div></div>
+    <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO / SO</button>${dir === 'in' ? ' <button type="button" class="btn sm" data-x="paste">📋 Tempel tabel dari SAP</button>' : ''}</div></div>
   </form><div class="err" id="terr"></div>
   <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan transaksi</button></div>`, { wide: true });
   const el = m.el, f = $('#tx', el), ls = $('#ls', el), E = f.elements;
   const findPO = () => { const v = E.poRef.value.trim().toLowerCase(); return v ? S.pos.find(p => p.poNo.toLowerCase() === v && p.status !== 'batal') : null; };
   function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `${p.location || '-'} · ${fmtN(stock(p.id))} · ${fmtN(stock(p.id) - (commit.get(p.id) || 0))}` : ''; }
   function addLine(pid = '', qty = '') {
-    const p = pid ? partMap.get(pid) : null;
+    const p = pid ? (partMap.get(pid) || S.parts.find(x => x.id === pid)) : null;
     const d = document.createElement('div'); d.className = 'lr';
     d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="li mut"></span><button type="button" class="btn sm" data-x="rm" title="Hapus baris">×</button>`;
     ls.appendChild(d); info(d);
@@ -817,6 +819,7 @@ function openTx(dir, preset = {}) {
     if (x === 'c') m.close();
     if (x === 'addl') addLine();
     if (x === 'fillpo') fillPO();
+    if (x === 'paste') pasteTable(lines => { [...ls.children].forEach(r => { if (!$('.lp', r).value.trim() && !$('.lq', r).value) r.remove(); }); lines.forEach(l => addLine(l.partId, l.qty)); if (!ls.children.length) addLine(); });
     if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); }
     if (x === 's') {
       const err = $('#terr', el); err.textContent = '';
@@ -1911,6 +1914,141 @@ function poDetail(id) {
       const body = inf.lines.map((l, i) => { const p = partMap.get(l.partId) || {}; return [i + 1, pdfSafe(p.partNo), pdfSafe(p.name), fmtN(l.qty), fmtN(l.d), fmtN(l.sisa), fmtN(l.free), l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k, l.dv]; });
       pdfTable(doc, 62, ['No', 'No. Part', 'Detail', 'Qty', 'Terkirim', 'Sisa', 'Free', 'Status', 'Delivery'], body, { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } } });
       saveFile(`PO-${pdfSafe(po.poNo).replace(/[^\w-]+/g, '_')}.pdf`, doc.output('blob'));
+    }
+  });
+}
+
+/* ============ TEMPEL TABEL (SAP / Excel) ============ */
+function parsePasted(text) {
+  const norm = t => String(t || '').toUpperCase().replace(/\s+/g, ''), nz = t => norm(t).replace(/^0+(?=[A-Z0-9])/, '');
+  const idx = new Map(); for (const p of S.parts) { idx.set(norm(p.partNo), p); idx.set(nz(p.partNo), p); }
+  const find = c => idx.get(norm(c)) || idx.get(nz(c)) || null;
+  const lines = String(text || '').split(/\r?\n/).map(l => l.replace(/ /g, ' ')).filter(l => l.trim());
+  const split = l => { if (l.includes('\t')) return l.split('\t').map(c => c.trim()); let c = l.split(/\s{2,}|;|\|/).map(x => x.trim()); if (c.length < 2) c = l.trim().split(/\s+/); return c; };
+  const grid = lines.map(split), isNum = c => /^-?[\d.,]+$/.test(c) && /\d/.test(c);
+  let hdr = null; if (grid.length && !grid[0].some(isNum) && grid[0].some(c => /material|part|qty|quantity|jumlah|desc|text|kuantitas|menge/i.test(c))) hdr = grid.shift();
+  const col = re => hdr ? hdr.findIndex(c => re.test(c)) : -1;
+  const qc = col(/^(qty|quantity|jumlah|kuantitas|menge|order qty|gr qty|received)/i), pc = col(/material|part ?n|part ?no|no\.? ?part|kode/i), dc = col(/desc|text|nama|deskripsi/i);
+  const out = [], bad = [];
+  for (const cells of grid) {
+    let pi = pc >= 0 && cells[pc] ? pc : -1;
+    if (pi < 0) pi = cells.findIndex(c => c && find(c));
+    if (pi < 0) pi = cells.findIndex(c => /^[A-Z0-9][A-Z0-9.\-]*\/[A-Z0-9.\-\/]+$/i.test(c));
+    if (pi < 0) { bad.push(cells.join(' | ')); continue; }
+    let rq = ''; if (qc >= 0 && cells[qc]) rq = cells[qc]; else { const j = cells.findIndex((c, i) => i !== pi && i > pi && isNum(c) && numID(c) > 0); if (j >= 0) rq = cells[j]; }
+    if (!rq) { bad.push(cells.join(' | ')); continue; }
+    let desc = dc >= 0 ? cells[dc] : cells.filter((c, i) => i !== pi && c && !isNum(c) && !/^(PC|PCS|EA|UNIT|ST|SET)$/i.test(c)).sort((a, b) => b.length - a.length)[0] || '';
+    out.push({ raw: cells[pi].trim().toUpperCase(), part: find(cells[pi]), rq, desc: desc || '' });
+  }
+  const dec3 = out.length > 0 && out.every(r => /^\d+[.,]000$/.test(r.rq.trim()));
+  const pq = c => { c = c.trim().replace(/\s/g, ''); if (dec3) return parseFloat(c.replace(',', '.')) || 0; if (c.includes('.') && c.includes(',')) { const d = c.lastIndexOf('.') > c.lastIndexOf(',') ? '.' : ','; return parseFloat(c.split(d === '.' ? ',' : '.').join('').replace(d, '.')) || 0; } return numID(c); };
+  for (const r of out) r.qty = pq(r.rq);
+  for (let i = out.length - 1; i >= 0; i--) if (!(out[i].qty > 0)) { bad.push(out[i].raw + ' (qty ' + out[i].rq + ')'); out.splice(i, 1); }
+  const mp = new Map(); for (const r of out) { const k = r.part ? r.part.id : 'n:' + norm(r.raw); const e = mp.get(k); if (e) e.qty += r.qty; else mp.set(k, { ...r }); }
+  return { rows: [...mp.values()], bad, header: !!hdr };
+}
+function pasteTable(onApply) {
+  const m = modal(`<h3>Tempel tabel dari SAP</h3>
+  <p class="mut" style="margin:0 0 8px;font-size:13px">Salin tabel dari SAP/Excel (minimal kolom <b>part number</b> dan <b>qty</b>), lalu tempel (Ctrl+V) di kotak ini. Baris judul kolom boleh ikut disalin. Part yang sama dijumlahkan otomatis.</p>
+  <textarea id="pt" rows="7" placeholder="Tempel di sini…" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"></textarea>
+  <div id="ppv" style="margin-top:10px"></div>
+  ${canWrite ? '<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px"><input type="checkbox" id="pnew" checked style="width:18px;height:18px"> Buat spare part baru untuk part yang belum terdaftar</label>' : ''}
+  <div class="err" id="perr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="go" disabled>Masukkan ke daftar</button></div>`, { wide: true });
+  const el = m.el; let P = { rows: [], bad: [] };
+  const draw = () => {
+    P = parsePasted($('#pt', el).value); const nNew = P.rows.filter(r => !r.part).length;
+    $('#ppv', el).innerHTML = P.rows.length ? `<div class="tw" style="max-height:260px"><table><thead><tr><th>No</th><th>Part Number</th><th>Deskripsi</th><th class="n">Qty</th><th>Status</th></tr></thead><tbody>${P.rows.map((r, i) => `<tr><td class="mut">${i + 1}</td><td class="mono" style="white-space:nowrap"><b>${esc(r.part ? r.part.partNo : r.raw)}</b></td><td>${esc(r.part ? r.part.name : r.desc)}</td><td class="n"><b>${fmtN(r.qty)}</b></td><td>${r.part ? '<span class="chip ok">Terdaftar</span>' : '<span class="chip warn">Part baru</span>'}</td></tr>`).join('')}</tbody></table></div><div class="mut" style="font-size:12.5px;margin-top:6px">${P.rows.length} part · ${fmtN(P.rows.reduce((s, r) => s + r.qty, 0))} pcs${nNew ? ` · ${nNew} belum terdaftar` : ''}${P.bad.length ? ` · <b style="color:#b45309">${P.bad.length} baris tidak terbaca dan dilewati</b>` : ''}</div>` : ($('#pt', el).value.trim() ? '<div class="err">Tidak ada baris yang bisa dibaca. Pastikan ada kolom part number dan qty.</div>' : '');
+    $('[data-x=go]', el).disabled = !P.rows.length;
+  };
+  el.addEventListener('input', e => { if (e.target.id === 'pt') draw(); });
+  el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go') {
+      const mk = $('#pnew', el)?.checked; const fresh = P.rows.filter(r => !r.part);
+      if (fresh.length && !mk) { $('#perr', el).textContent = `${fresh.length} part belum terdaftar. Centang “Buat spare part baru”, atau hapus barisnya dari tabel.`; return; }
+      b.disabled = true; const lines = [];
+      const ok = await guarded(async () => {
+        for (const r of P.rows) {
+          let id = r.part?.id;
+          if (!id) { const c = await db.collection('parts').add({ partNo: r.raw, name: r.desc || '', category: '', model: '', supersession: '', unit: 'pcs', location: '', supplierId: '', minStock: 0, price: 0, createdAt: nowISO(), createdBy: uid }); id = c.id; }
+          lines.push({ partId: id, qty: r.qty });
+        }
+      });
+      if (ok) { m.close(); onApply(lines); toast(`${lines.length} baris dimasukkan${fresh.length ? ` (${fresh.length} part baru dibuat)` : ''}`); } else b.disabled = false;
+    }
+  });
+}
+
+/* ============ PUTAWAY LIST ============ */
+function putawaySelect() {
+  if (!canWrite) return denied();
+  const ins = S.movements.filter(m => m.dir === 'in' && !isOpening(m));
+  if (!ins.length) { toast('Belum ada transaksi barang masuk.', 'err'); return; }
+  const last = ins.reduce((a, m) => (m.date > a ? m.date : a), ''), t = today(), def = ins.some(m => m.date === t) ? t : last;
+  const m = modal(`<h3>Putaway List</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Daftar penyusunan barang yang baru datang ke lokasi bin-nya. Pilih tanggal barang masuk, lalu dokumen yang akan disusun.</p>
+  <div class="grid">${fld('Dari tanggal', 'from', { type: 'date', val: def })}${fld('Sampai tanggal', 'to', { type: 'date', val: def })}</div>
+  <div id="pdocs" style="margin-top:12px"></div><div class="err" id="perr"></div>
+  <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="go">Mulai putaway</button></div>`);
+  const el = m.el; let groups = [];
+  const draw = () => {
+    const f = $('[name=from]', el).value, to = $('[name=to]', el).value, mp = new Map();
+    for (const x of ins) { if ((f && x.date < f) || (to && x.date > to)) continue; const k = (x.docNo || '(tanpa no. dokumen)') + '|' + x.date + '|' + (x.party || ''); let g = mp.get(k); if (!g) { g = { docNo: x.docNo || '(tanpa no. dokumen)', date: x.date, party: x.party || partyName(x), moves: [] }; mp.set(k, g); } g.moves.push(x); }
+    groups = [...mp.values()].sort((a, b) => (b.date + b.docNo).localeCompare(a.date + a.docNo));
+    $('#pdocs', el).innerHTML = groups.length ? `<label style="display:flex;gap:10px;align-items:center;padding:6px 4px;font-weight:700"><input type="checkbox" id="pdall" checked style="width:20px;height:20px"> Pilih semua (${groups.length} dokumen)</label>` + groups.map((g, i) => `<label style="display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" value="${i}" checked style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(g.docNo)}</b><br><span class="mut" style="font-size:12.5px">${fmtD(g.date)}${g.party ? ' · ' + esc(g.party) : ''}</span></span><span class="mut">${g.moves.length} item · ${fmtN(g.moves.reduce((s, x) => s + x.qty, 0))} pcs</span></label>`).join('') : '<div class="empty">Tidak ada barang masuk pada rentang tanggal ini.</div>';
+  };
+  draw();
+  el.addEventListener('input', e => { if (e.target.name === 'from' || e.target.name === 'to') draw(); });
+  el.addEventListener('change', e => { const bs = [...el.querySelectorAll('#pdocs input[value]')]; if (e.target.id === 'pdall') bs.forEach(b => b.checked = e.target.checked); else { const a = $('#pdall', el); if (a) a.checked = bs.every(b => b.checked); } });
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go') { const ch = [...el.querySelectorAll('#pdocs input[value]:checked')].flatMap(x => groups[+x.value].moves); if (!ch.length) { $('#perr', el).textContent = 'Pilih minimal satu dokumen.'; return; } m.close(); openPutaway(ch); }
+  });
+}
+function putawayRows(moves, g2) {
+  const mp = new Map();
+  for (const x of moves) { const p = partMap.get(x.partId); if (!p) continue; let r = mp.get(p.id); if (!r) { r = { id: p.id, bin: p.location || '', partNo: p.partNo, name: p.name || '', qty: 0, refs: [], g2: false }; mp.set(p.id, r); } r.qty += x.qty; r.refs.push((x.docNo || '-') + ' × ' + fmtN(x.qty)); }
+  for (const r of mp.values()) r.g2 = inG2(r.bin, g2);
+  return [...mp.values()].sort((a, b) => binCmp(a.bin, b.bin) || a.partNo.localeCompare(b.partNo, 'en', { numeric: true }));
+}
+function openPutaway(moves) {
+  const ids = moves.map(x => x.id).sort(), ck = 'wms-put-' + ids.length + '-' + ids[0] + '-' + ids[ids.length - 1]; let done = new Set();
+  try { done = new Set(JSON.parse(localStorage.getItem(ck) || '[]')); } catch (e) { }
+  const saveDone = () => { try { localStorage.setItem(ck, JSON.stringify([...done])); } catch (e) { } };
+  const docs = [...new Set(moves.map(x => x.docNo || '-'))];
+  const m = modal(`<h3 style="margin-bottom:4px">Putaway List</h3>
+  <div class="mut" style="font-size:13px;margin-bottom:8px">${docs.length} dokumen · ${esc(docs.slice(0, 4).join(', '))}${docs.length > 4 ? ' …' : ''}</div>
+  <div class="pk-top"><div class="t"><div id="pkc">0 / 0 disusun</div><span id="pkq"></span></div><div class="pk-bar"><i id="pkb" style="width:0"></i></div></div>
+  <div id="pv"></div>
+  <details style="margin:6px 0 4px"><summary class="mut" style="cursor:pointer;font-size:13px">Atur bin Gudang 2</summary>
+    <label class="f" style="margin-top:8px"><span>Awalan bin yang termasuk Gudang 2 (pisahkan koma)</span><input id="g2" value="${esc(getG2())}"></label></details>
+  <div class="pk-act"><button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
+  m.el.classList.add('pkm');
+  const el = m.el, rowsNow = () => putawayRows(moves, $('#g2', el).value), keyOf = r => r.id, noBin = r => !r.bin || /^unlocated$/i.test(r.bin);
+  const draw = () => {
+    const rows = rowsNow(), dn = r => done.has(keyOf(r)), n = rows.filter(dn).length, q = rows.reduce((s, r) => s + r.qty, 0), qd = rows.filter(dn).reduce((s, r) => s + r.qty, 0);
+    $('#pkc', el).textContent = `${n} / ${rows.length} disusun`; $('#pkq', el).textContent = `${fmtN(qd)} / ${fmtN(q)} pcs`; $('#pkb', el).style.width = (rows.length ? n / rows.length * 100 : 0) + '%';
+    $('#pv', el).innerHTML = rows.map(r => `<div class="pkr ${r.g2 ? 'g2' : ''} ${dn(r) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${dn(r) ? '✓' : ''}</div><div class="mid"><div class="bin">${noBin(r) ? '<span style="color:#dc2626">BELUM ADA BIN</span>' : esc(r.bin)}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}</div><div class="ds" style="font-size:12px;margin-top:3px">${r.refs.map(x => `<span class="chip gray" style="margin:0 4px 2px 0">${esc(x)}</span>`).join('')}</div>${noBin(r) && canWrite ? `<input class="nb" data-pid="${r.id}" placeholder="Ketik lokasi bin lalu Enter" style="margin-top:6px;width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px">` : ''}</div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
+  };
+  draw(); el.addEventListener('input', e => { if (e.target.id === 'g2') draw(); });
+  el.addEventListener('change', async e => { const i = e.target.closest('.nb'); if (!i) return; const v = i.value.trim().toUpperCase(); if (!v) return; if (await guarded(() => db.doc('parts/' + i.dataset.pid).update({ location: v, updatedAt: nowISO() }))) { toast('Lokasi bin disimpan'); setTimeout(draw, 60); } });
+  el.addEventListener('click', e => { if (e.target.closest('.nb')) return; const r = e.target.closest('.pkr'); if (!r) return; const k = r.dataset.k; if (done.has(k)) done.delete(k); else done.add(k); saveDone(); draw(); });
+  el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b) return;
+    if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'reset') { done = new Set(); saveDone(); draw(); }
+    if (b.dataset.x === 'dl') {
+      const g2 = $('#g2', el).value; await saveG2(g2.trim());
+      const rows = putawayRows(moves, g2), doc = pdfDoc('PUTAWAY LIST', 'Penyusunan barang masuk'); if (!doc) return;
+      doc.setFontSize(9.5).setFont('helvetica', 'normal');
+      doc.text('Dokumen : ' + pdfSafe(docs.join(', ')).slice(0, 95), 14, 42); doc.text('Dicetak  : ' + fmtD(today()), 14, 47); doc.text('Total item : ' + rows.length + ' baris / ' + fmtN(rows.reduce((s, r) => s + r.qty, 0)) + ' pcs', 110, 47);
+      doc.setFillColor(255, 224, 178).rect(14, 51, 4, 4, 'F'); doc.setFontSize(8).text('= lokasi bin di Gudang 2', 20, 54.3);
+      const body = rows.map((r, i) => [i + 1, pdfSafe(r.bin || 'BELUM ADA BIN'), pdfSafe(r.partNo), pdfSafe(r.name), fmtN(r.qty), r.g2 ? 'GUDANG 2' : 'Gudang 1', pdfSafe(r.refs.join(', ')), '']);
+      pdfTable(doc, 58, ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty', 'Gudang', 'Dokumen', 'Cek'], body, {
+        columnStyles: { 0: { cellWidth: 9 }, 1: { cellWidth: 22, fontStyle: 'bold' }, 2: { cellWidth: 30 }, 4: { halign: 'right', cellWidth: 11, fontStyle: 'bold' }, 5: { cellWidth: 23 }, 6: { cellWidth: 30, fontSize: 7 }, 7: { cellWidth: 12 } },
+        didParseCell: d => { if (d.section === 'body' && rows[d.row.index]?.g2) { d.cell.styles.fillColor = [255, 224, 178]; if (d.column.index === 5) d.cell.styles.fontStyle = 'bold'; } },
+        didDrawCell: d => { if (d.section === 'body' && d.column.index === 7) { doc.setDrawColor(60).setLineWidth(0.3).rect(d.cell.x + 3, d.cell.y + d.cell.height / 2 - 2, 4, 4); } }
+      });
+      saveFile(`Putaway-${today()}.pdf`, doc.output('blob'));
     }
   });
 }
