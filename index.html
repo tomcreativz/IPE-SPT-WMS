@@ -365,12 +365,12 @@ function monthsBack(ym, n) {
   return out;
 }
 const r1 = x => Math.round(x * 10) / 10;
-function analyze(ym) {
+function analyze(ym, sohOf) {
   const win = monthsBack(ym, 6), R = new Map();
   for (const p of S.parts) {
     const mm = dm.get(p.id) || new Map(), vals = win.map(k => mm.get(k) || 0);
     const T = vals.reduce((a, b) => a + b, 0), active = vals.filter(v => v > 0).length;
-    const soh = stock(p.id), free = soh - (commit.get(p.id) || 0);
+    const soh = sohOf ? (sohOf.get(p.id) || 0) : stock(p.id), free = soh - (commit.get(p.id) || 0);
     let mv = '';
     if (soh <= 0 && active === 0) mv = ''; else if (soh > 0 && active === 0) mv = 'DEADSTOCK'; else if (active > 3) mv = 'FAST'; else if (active === 3) mv = 'MEDIUM'; else mv = 'SLOW';
     const ship = p.ship ?? 1, ss = p.ss ?? 1, freq = p.freq ?? 1, avg = Math.ceil(T / 6);
@@ -1047,6 +1047,67 @@ function importKartu() {
   });
 }
 
+/* ============ EXPORT LAPORAN SOH (Excel untuk head office) ============ */
+function exportSOH(ym) {
+  const X = window.XLSX; if (!X) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const [yr, mo] = ym.split('-').map(Number), bln = BLN_ID[mo - 1], title = `SOH SPT ${bln} ${yr}`, start = ym + '-01', end = ym + '-31';
+  const R = computeSOH(ym), sohOf = new Map();
+  const rows = S.parts.map(p => {
+    const r = R.get(p.id) || { awal: 0, in: 0, other: 0, ...Object.fromEntries(SOH_OUT.map(o => [o[0], 0])) };
+    const out = SOH_OUT.reduce((s, o) => s + r[o[0]], 0) + r.other, akhir = r.awal + r.in - out, com = commit.get(p.id) || 0; sohOf.set(p.id, akhir);
+    return { p, ...r, out, akhir, com, free: akhir - com, deliv: r.sold + r.wh + r.bund };
+  });
+  const A = analyze(ym, sohOf);
+  const sheet = (aoa, widths) => { const ws = X.utils.aoa_to_sheet(aoa); if (widths) ws['!cols'] = widths.map(w => ({ wch: w })); return ws; };
+  // --- DATA SOH
+  const hSoh = ['NO', 'PART NUMBER', 'SUPRESSION', 'DESCRIPTION', 'BIN LOC', 'STOCK AWAL BULAN', 'STOCK FREE', 'IN', 'COMMITED', ...SOH_OUT.map(o => o[2].toUpperCase()), 'LAINNYA', 'TOTAL OUT', 'STOCK AKHIR', 'TOTAL DELIVERY', 'MOVEMENT'];
+  const dSoh = rows.map((r, i) => [i + 1, r.p.partNo, r.p.supersession || '', r.p.name, r.p.location || '', r.awal, r.free, r.in, r.com, ...SOH_OUT.map(o => r[o[0]]), r.other, r.out, r.akhir, r.deliv, A.get(r.p.id)?.mv || '']);
+  const tot = rows.reduce((t, r) => { t.awal += r.awal; t.in += r.in; t.out += r.out; t.akhir += r.akhir; t.val += Math.max(0, r.akhir) * (r.p.price || 0); return t; }, { awal: 0, in: 0, out: 0, akhir: 0, val: 0 });
+  // --- REPORTS
+  const mn = BULAN, hRep = ['NO', 'PART NUMBER', 'DESCRIPTION', 'SOH', 'STOK SISA', 'PRICE', 'MODEL', ...mn.map(m => m + ' ' + yr), 'SUM/6 MONTH', `SUM ${yr}`, 'MIN', 'MAX', 'AVRG 6M', 'MOVEMENT', 'RE-ORDER SUGGESTION', 'INCOMING', 'TOTAL AVAILABLE', 'SHIP', 'SS', 'FREQ ORDER', 'DAYS COVER (bulan)', 'BULAN BERTAHAN', 'STATUS URGENSI'];
+  let revYear = 0, delYear = 0; const monthDel = new Array(12).fill(0), monthRev = new Array(12).fill(0);
+  const dRep = S.parts.map((p, i) => {
+    const a = A.get(p.id), mm = dm.get(p.id) || new Map(), vals = [];
+    for (let k = 0; k < 12; k++) { const q = mm.get(`${yr}-${String(k + 1).padStart(2, '0')}`) || 0; vals.push(q); if (k < mo) { monthDel[k] += q; monthRev[k] += q * (p.price || 0); } }
+    return [i + 1, p.partNo, p.name, a.soh, a.free, p.price || 0, p.model || '', ...vals, a.T, vals.reduce((s, v, k) => s + (k < mo ? v : 0), 0), a.min, a.max, a.avg, a.mv, a.sug, a.inc, a.avail, p.ship ?? 1, p.ss ?? 1, p.freq ?? 1, a.cover ?? '∞', a.lasts ?? '∞', a.urg];
+  });
+  revYear = monthRev.reduce((a, b) => a + b, 0); delYear = monthDel.reduce((a, b) => a + b, 0);
+  // --- PART IN-OUT (bulan ini)
+  const mvs = S.movements.filter(m => (m.date || '') >= start && (m.date || '') <= end && !isOpening(m)).sort((a, b) => (a.date + (a.at || '')).localeCompare(b.date + (b.at || '')));
+  const dIO = mvs.map(m => { const p = partMap.get(m.partId); return [m.date, p?.partNo || '', partyName(m), m.docNo || '', m.dir === 'in' ? m.qty : '', m.dir === 'out' ? m.qty : '', p?.location || '', p?.name || '', m.kind, m.ekspedisi || '', poText(m), m.awb || '', m.note || '']; });
+  // --- PO CUSTOMER
+  const dPO = []; for (const po of S.pos.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))) {
+    const info = poInfo(po); if (!((po.date || '') >= start && (po.date || '') <= end) && !info.open) continue; if ((po.date || '') > end) continue;
+    for (const l of info.lines) { const p = partMap.get(l.partId); dPO.push([po.date || '', po.poNo, po.plant || '', p?.partNo || '', custMap.get(po.customerId)?.name || '', p?.location || '', p?.name || '', l.qty, l.ket === 'C' ? 'C' : (l.kurang ? -l.kurang : ''), l.free, l.stk, l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k.toUpperCase(), l.dv, l.req || '']); }
+  }
+  // --- STOCK ORDER
+  const dSO = []; for (const l of S.sorders.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))) {
+    const p = partMap.get(l.partId); if (!p || (l.date || '') > end) continue; const i = soLineInfo(l);
+    if (!((l.date || '') >= start) && (l.done || i.st === 'DONE')) continue;
+    dSO.push([l.date || '', p.partNo, p.name, l.period, A.get(p.id)?.mv || '', l.done ? 'C' : l.req, l.done ? 'DONE' : i.st, !l.done && i.sisa > 0 ? 'SISA ' + i.sisa : '']);
+  }
+  // --- DASHBOARD
+  const st = monthStats(ym), top = [...A.values()].filter(a => a.T > 0).sort((a, b) => b.T - a.T).slice(0, 20);
+  const catN = { DEADSTOCK: 0, SLOW: 0, MEDIUM: 0, FAST: 0 }, catV = { DEADSTOCK: 0, SLOW: 0, MEDIUM: 0, FAST: 0 };
+  for (const a of A.values()) if (a.mv && a.soh > 0) { catN[a.mv]++; catV[a.mv] += a.soh * (a.p.price || 0); }
+  const dash = [[title], [], [`TOTAL REVENUE ${yr}`, revYear, '', 'TOTAL STOCK VALUE', tot.val, '', 'TOTAL STOCK QTY', tot.akhir, '', `TOTAL DELIVERY ${yr}`, delYear], [],
+    ['REKONSILIASI', 'LAPORAN TRANSAKSI', 'SOH', 'SELISIH', 'KETERANGAN'], ['IN', st.txIn, st.inn, st.txIn - st.inn, st.okIn ? 'SAMA' : 'SELISIH'], ['OUT', st.txOut, st.out, st.txOut - st.out, st.okOut ? 'SAMA' : 'SELISIH'], ['STOK AWAL BULAN', '', tot.awal], ['STOK AKHIR', '', tot.akhir], [], 
+    ['BULAN', 'TOTAL DELIVERY (QTY)', 'REVENUE'], ...mn.map((m, k) => [m, k < mo ? monthDel[k] : '', k < mo ? monthRev[k] : '']), [],
+    ['SUMMARY STOCK MOVING', 'JUMLAH PART', 'ESTIMASI NILAI'], ...['DEADSTOCK', 'SLOW', 'MEDIUM', 'FAST'].map(k => [k, catN[k], catV[k]]), [],
+    ['TOP 20 PARTS DELIVERY 6 BULAN'], ['NO', 'PART NUMBER', 'DETAIL', 'TOTAL QTY', 'BIN'], ...top.map((a, i) => [i + 1, a.p.partNo, a.p.name, a.T, a.p.location || '']), [],
+    ['Catatan: stok, delivery, dan rekonsiliasi dihitung sampai akhir ' + bln + ' ' + yr + '. Commited, Stock Free, Incoming, serta status PO dan Stock Order mengikuti kondisi pada saat file ini dibuat (' + fmtD(today()) + ').']];
+  const wb = X.utils.book_new();
+  X.utils.book_append_sheet(wb, sheet(dash, [26, 22, 22, 18, 22, 4, 18, 14, 4, 20, 14]), 'DASHBOARD');
+  X.utils.book_append_sheet(wb, sheet([hSoh, ...dSoh], [6, 18, 14, 38, 10, 10, 10, 8, 10, ...SOH_OUT.map(() => 10), 9, 10, 11, 10, 11]), 'DATA SOH');
+  X.utils.book_append_sheet(wb, sheet([hRep, ...dRep], [6, 18, 38, 7, 8, 12, 14, ...mn.map(() => 7), 10, 9, 7, 7, 8, 12, 12, 9, 11, 6, 6, 8, 10, 10, 18]), 'REPORTS');
+  X.utils.book_append_sheet(wb, sheet([['TGL', 'PART NUMBER', 'FORM/CUSTOMER', 'BPB/GR/GI', 'IN', 'OUT', 'BIN', 'DETAIL', 'FORM/TO', 'EKPEDISI', 'PO CUST/REQ', 'AWB/RESI', 'REMARK'], ...dIO], [11, 18, 30, 18, 6, 6, 9, 34, 16, 14, 22, 16, 22]), 'PART IN-OUT');
+  X.utils.book_append_sheet(wb, sheet([['TGL PO', 'NOMOR PO/QT', 'PLANT', 'PART NUMBER', 'CUSTOMER', 'BIN', 'DETAIL', 'QTY', 'KET', 'FREE', 'STOCK', 'STATUS', 'DELIVERY', 'REQ'], ...dPO], [11, 20, 16, 18, 30, 9, 34, 6, 6, 7, 7, 10, 12, 22]), 'PO CUSTOMER');
+  X.utils.book_append_sheet(wb, sheet([['TGL', 'PN', 'DESCRIPTION', 'PERIODE SO', 'MOVEMENT', 'REQ SO', 'STATUS', ''], ...dSO], [11, 18, 36, 18, 12, 8, 10, 10]), 'STOCK ORDER');
+  const buf = X.write(wb, { bookType: 'xlsx', type: 'array' });
+  saveFile(`${title}.xlsx`, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  return { sheets: wb.SheetNames, rows: { soh: dSoh.length, rep: dRep.length, io: dIO.length, po: dPO.length, so: dSO.length }, wb };
+}
+
 /* ============ TUTUP BULAN ============ */
 function monthStats(ym) {
   const R = computeSOH(ym), start = ym + '-01', end = ym + '-31';
@@ -1122,7 +1183,7 @@ function viewSOH() {
       <label class="mut">Bulan <input type="month" id="ym" value="${st.ym}"></label>
       <input type="search" id="q" placeholder="Cari part number / deskripsi / bin…" value="${esc(st.q)}">
       <label class="mut" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="act" ${st.active ? 'checked' : ''}> Hanya yang ada stok / bergerak</label>
-      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>
+      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn primary" data-act="xlsx">Export Excel (laporan HO)</button>
     </div><div id="sohcards"></div>
     <div class="tw"><div id="tbl"></div></div><div class="bar" style="margin-top:10px;justify-content:center" id="pg"></div>`,
     input(e) {
@@ -1134,6 +1195,7 @@ function viewSOH() {
     act(a) {
       if (a === 'prev') { page = Math.max(0, page - 1); this.fill(true); }
       if (a === 'next') { page++; this.fill(true); }
+      if (a === 'xlsx') { toast('Menyusun file Excel…'); setTimeout(() => exportSOH(st.ym), 30); }
       if (a === 'csv') {
         const hdr = ['NO', 'PART NUMBER', 'SUPRESSION', 'DESCRIPTION', 'BIN LOC', 'STOCK AWAL BULAN', 'STOCK FREE', 'IN', 'COMMITED', ...SOH_OUT.map(o => o[2].toUpperCase()), 'LAINNYA', 'TOTAL OUT', 'STOCK AKHIR', 'TOTAL DELIVERY'];
         exportCSV('SOH-' + st.ym, [hdr, ...rows.map((r, i) => [i + 1, r.p.partNo, r.p.supersession || '', r.p.name, r.p.location || '', r.awal, r.free, r.in, r.com, ...SOH_OUT.map(o => r[o[0]]), r.other, r.out, r.akhir, r.deliv])]);
