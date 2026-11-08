@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
@@ -1105,7 +1105,7 @@ function exportSOH(ym) {
     return { p, ...r, out, akhir, com, free: akhir - com, deliv: r.sold + r.wh + r.bund };
   });
   const A = analyze(ym, sohOf);
-  const sheet = (aoa, widths) => { const ws = X.utils.aoa_to_sheet(aoa); if (widths) ws['!cols'] = widths.map(w => ({ wch: w })); return ws; };
+  const sheet = (aoa, widths) => { const ws = X.utils.aoa_to_sheet(aoa); (aoa[0] || []).forEach((_, c) => { const ref = X.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = { font: { bold: true }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; }); ws['!freeze'] = { xSplit: 0, ySplit: 1 }; if (widths) ws['!cols'] = widths.map(w => ({ wch: w })); return ws; };
   // --- DATA SOH
   const hSoh = ['NO', 'PART NUMBER', 'SUPRESSION', 'DESCRIPTION', 'BIN LOC', 'STOCK AWAL BULAN', 'STOCK FREE', 'IN', 'COMMITED', ...SOH_OUT.map(o => o[2].toUpperCase()), 'LAINNYA', 'TOTAL OUT', 'STOCK AKHIR', 'TOTAL DELIVERY', 'MOVEMENT'];
   const dSoh = rows.map((r, i) => [i + 1, r.p.partNo, r.p.supersession || '', r.p.name, r.p.location || '', r.awal, r.free, r.in, r.com, ...SOH_OUT.map(o => r[o[0]]), r.other, r.out, r.akhir, r.deliv, A.get(r.p.id)?.mv || '']);
@@ -1144,12 +1144,8 @@ function exportSOH(ym) {
     ['TOP 20 PARTS DELIVERY 6 BULAN'], ['NO', 'PART NUMBER', 'DETAIL', 'TOTAL QTY', 'BIN'], ...top.map((a, i) => [i + 1, a.p.partNo, a.p.name, a.T, a.p.location || '']), [],
     ['Catatan: stok, delivery, dan rekonsiliasi dihitung sampai akhir ' + bln + ' ' + yr + '. Commited, Stock Free, Incoming, serta status PO dan Stock Order mengikuti kondisi pada saat file ini dibuat (' + fmtD(today()) + ').']];
   const wb = X.utils.book_new();
-  X.utils.book_append_sheet(wb, sheet(dash, [26, 22, 22, 18, 22, 4, 18, 14, 4, 20, 14]), 'DASHBOARD');
   X.utils.book_append_sheet(wb, sheet([hSoh, ...dSoh], [6, 18, 14, 38, 10, 10, 10, 8, 10, ...SOH_OUT.map(() => 10), 9, 10, 11, 10, 11]), 'DATA SOH');
-  X.utils.book_append_sheet(wb, sheet([hRep, ...dRep], [6, 18, 38, 7, 8, 12, 14, ...mn.map(() => 7), 10, 9, 7, 7, 8, 12, 12, 9, 11, 6, 6, 8, 10, 10, 18]), 'REPORTS');
   X.utils.book_append_sheet(wb, sheet([['TGL', 'PART NUMBER', 'FORM/CUSTOMER', 'BPB/GR/GI', 'IN', 'OUT', 'BIN', 'DETAIL', 'FORM/TO', 'EKPEDISI', 'PO CUST/REQ', 'AWB/RESI', 'REMARK'], ...dIO], [11, 18, 30, 18, 6, 6, 9, 34, 16, 14, 22, 16, 22]), 'PART IN-OUT');
-  X.utils.book_append_sheet(wb, sheet([['TGL PO', 'NOMOR PO/QT', 'PLANT', 'PART NUMBER', 'CUSTOMER', 'BIN', 'DETAIL', 'QTY', 'KET', 'FREE', 'STOCK', 'STATUS', 'DELIVERY', 'REQ'], ...dPO], [11, 20, 16, 18, 30, 9, 34, 6, 6, 7, 7, 10, 12, 22]), 'PO CUSTOMER');
-  X.utils.book_append_sheet(wb, sheet([['TGL', 'PN', 'DESCRIPTION', 'PERIODE SO', 'MOVEMENT', 'REQ SO', 'STATUS', ''], ...dSO], [11, 18, 36, 18, 12, 8, 10, 10]), 'STOCK ORDER');
   const buf = X.write(wb, { bookType: 'xlsx', type: 'array' });
   saveFile(`${title}.xlsx`, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   return { sheets: wb.SheetNames, rows: { soh: dSoh.length, rep: dRep.length, io: dIO.length, po: dPO.length, so: dSO.length }, wb };
@@ -1988,6 +1984,12 @@ function viewUsers() {
   return {
     shell: `<div class="banner info">Akun baru dibuat di dashboard Supabase (Authentication → Users → Add user). Setelah akun itu pertama kali masuk, atur perannya di sini. Peran: <b>Staf Gudang</b> (akses penuh: input barang masuk/keluar, kelola data, hapus, atur pengguna), <b>Admin</b> (hanya membuat PO dan mengecek stok), <b>PSSR</b> (ubah Database Customer, buat PO, cek stok, lihat Transaksi Part In-Out), <b>Branch Manager</b> (lihat seluruh operasional, tanpa mengubah), <b>Viewer</b> (hanya lihat).</div><div class="tw"><div id="tbl"></div></div>`,
     async input(e) {
+      if (e.target.dataset.nm) {
+        if (e.type !== 'change') return;
+        const { error } = await sb.from('profiles').update({ full_name: e.target.value.trim() }).eq('id', e.target.dataset.nm);
+        if (error) toast('Gagal menyimpan nama: ' + error.message, 'err'); else toast('Nama disimpan');
+        await loadProfiles(); this.fill(); return;
+      }
       const id = e.target.dataset.uid; if (!id) return;
       if (id === uid) { toast('Anda tidak bisa mengubah peran akun sendiri.', 'err'); this.fill(); return; }
       const { error } = await sb.from('profiles').update({ role: e.target.value }).eq('id', id);
@@ -1995,7 +1997,7 @@ function viewUsers() {
       await loadProfiles(); this.fill();
     },
     fill() {
-      $('#tbl').innerHTML = PROFILES.length ? `<table><thead><tr><th>Email</th><th>Nama</th><th>Peran</th></tr></thead><tbody>${PROFILES.map(p => `<tr><td>${esc(p.email)}${p.id === uid ? ' <span class="chip gray">Anda</span>' : ''}</td><td>${esc(p.full_name || '')}</td><td><select data-uid="${p.id}" ${p.id === uid ? 'disabled' : ''}>${ROLES.map(r => `<option value="${r[0]}" ${p.role === r[0] ? 'selected' : ''}>${r[1]}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>` : empty('Belum ada pengguna.');
+      $('#tbl').innerHTML = PROFILES.length ? `<table><thead><tr><th>Email</th><th>Nama</th><th>Peran</th></tr></thead><tbody>${PROFILES.map(p => `<tr><td>${esc(p.email)}${p.id === uid ? ' <span class="chip gray">Anda</span>' : ''}</td><td><input type="text" data-nm="${p.id}" value="${esc(p.full_name || '')}" placeholder="Ketik nama lalu Enter" style="min-width:200px"></td><td><select data-uid="${p.id}" ${p.id === uid ? 'disabled' : ''}>${ROLES.map(r => `<option value="${r[0]}" ${p.role === r[0] ? 'selected' : ''}>${r[1]}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>` : empty('Belum ada pengguna.');
     }
   };
 }
