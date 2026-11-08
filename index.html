@@ -153,7 +153,7 @@ function toast(msg, type) {
 
 /* ============ state ============ */
 const S = { parts: [], movements: [], customers: [], suppliers: [], pos: [], sorders: [], settings: [] };
-let closedSet = new Set(), setMissing = false, soMissing = false, dataVer = 0, dm = new Map(), incoming = new Map(), soReq = new Map();
+let closedSet = new Set(), setMissing = false, soMissing = false, tblErr = {}, dataVer = 0, dm = new Map(), incoming = new Map(), soReq = new Map();
 const loaded = {};
 let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
 let canWrite = false, canPO = false, isFull = false, loadFailed = false;
@@ -350,6 +350,7 @@ function refresh() {
 const ro = (poPage) => (canWrite || (poPage && canPO)) ? '' : (myRole === 'admin'
   ? '<div class="banner info">Peran Anda <b>Admin</b>: Anda dapat <b>membuat PO</b> (menu Purchase Order) dan <b>mengecek stok</b>. Pencatatan barang masuk/keluar dan pengelolaan data dilakukan oleh Staf Gudang.</div>'
   : '<div class="banner info">Akun Anda berhak <b>melihat saja</b>. Untuk mengubah data, minta Staf Gudang mengubah peran Anda di menu Pengguna & Hak Akses.</div>');
+const errDetail = k => { const e = tblErr[k]; return e ? `<div style="margin-top:6px;font-size:12px">Pesan dari Supabase: <code>${esc((e.code ? e.code + ' — ' : '') + (e.message || e))}</code>. Jika tabel sudah dibuat, tunggu semenit lalu tekan Ctrl+F5; bila masih sama, pastikan SQL dijalankan di project Supabase yang sama dengan config.js dan hasilnya “Success”.</div>` : ''; };
 const loadNoteHTML = '<div id="loadnote" class="banner warn" hidden>Data belum bisa dijangkau. Periksa koneksi internet; data yang tampil mungkin belum yang terbaru.</div>';
 const empty = (t) => `<div class="empty">${t}</div>`;
 
@@ -930,7 +931,7 @@ async function setClosed(ym, close) {
 }
 function viewClose() {
   return {
-    shell: `${setMissing ? '<div class="banner warn">Tabel pengaturan belum ada di database. Jalankan <b>supabase-tambah-tutupbulan.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.</div>' : ''}${loadNoteHTML}
+    shell: `${setMissing ? `<div class="banner warn">Tabel pengaturan belum terbaca dari database. Jalankan <b>supabase-tambah-tutupbulan.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.${errDetail('settings')}</div>` : ''}${loadNoteHTML}
     <p class="mut" style="margin-top:0">Bulan yang <b>ditutup</b> tidak bisa lagi ditambah, diubah, atau dihapus transaksinya (dijaga di database). Periksa rekonsiliasi lebih dulu. Hanya Staf Gudang yang dapat menutup atau membuka bulan.</p><div class="tw"><div id="tbl"></div></div>`,
     act(a, ym) {
       if (a === 'detail') closeDetail(ym);
@@ -1258,7 +1259,7 @@ const soChip = s => ({ DONE: 'ok', SEBAGIAN: 'warn', BELUM: 'gray' }[s]);
 function viewSO() {
   let rows = [];
   return {
-    shell: `${soMissing ? '<div class="banner warn">Tabel Stock Order belum ada di database. Jalankan <b>supabase-tambah-stockorder.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.</div>' : ''}${ro()}${loadNoteHTML}
+    shell: `${soMissing ? `<div class="banner warn">Tabel Stock Order belum terbaca dari database. Jalankan <b>supabase-tambah-stockorder.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.${errDetail('sorders')}</div>` : ''}${ro()}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari part number / deskripsi…" value="${esc(F.so.q)}"><select id="per"></select>
       <select id="st"><option value="">Semua status</option>${['BELUM', 'SEBAGIAN', 'DONE'].map(s => `<option ${F.so.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
       <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && !soMissing ? '<button class="btn primary" data-act="add">+ Stock Order</button>' : ''}</div>
@@ -1485,7 +1486,7 @@ async function start(session) {
   await loadProfiles();
   const t = setTimeout(() => { loadFailed = true; refresh(); }, 10000);
   try {
-    await Promise.all(Object.keys(S).map(async k => { try { S[k] = (await fetchAll(k)).map(r => ({ id: r.id, ...r.data })); } catch (e) { if (k === 'sorders') { soMissing = true; S[k] = []; } else if (k === 'settings') { setMissing = true; S[k] = []; } else throw e; } loaded[k] = true; }));
+    await Promise.all(Object.keys(S).map(async k => { try { S[k] = (await fetchAll(k)).map(r => ({ id: r.id, ...r.data })); } catch (e) { if (k === 'sorders') { soMissing = true; tblErr[k] = e; S[k] = []; } else if (k === 'settings') { setMissing = true; tblErr[k] = e; S[k] = []; } else throw e; } loaded[k] = true; }));
     clearTimeout(t); loadFailed = false;
   } catch (e) { console.error(e); loadFailed = true; }
   reindex(); route();
