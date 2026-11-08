@@ -169,7 +169,7 @@ let canWrite = false, canPO = false, isFull = false, loadFailed = false;
 let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
 const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '' }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
-  kartu: { part: '', from: '', to: '' }, cust: { q: '' }, supp: { q: '' }, po: { q: '', st: '' } };
+  kartu: { part: '', from: '', to: '' }, cust: { q: '', grp: '' }, supp: { q: '' }, po: { q: '', st: '' } };
 
 const IN_TYPES = ['IN', 'RETURN CUSTOMER', 'SALDO AWAL', 'KOREKSI (+)'];
 const OUT_TYPES = ['SOLD CUSTOMER', 'WH03 SERVICE', 'BUNDLING', 'IPE BJM', 'IPE SMD', 'IPE BPP', 'IPE PTK', 'IPE SBY', 'IPE JKT', 'IPE PKY', 'PART DAMAGE', 'PART RETURN', 'FUCHS', 'KOREKSI (-)'];
@@ -1313,7 +1313,7 @@ function backupXLSX() {
   const pn = id => partMap.get(id)?.partNo || '', nm = id => partMap.get(id)?.name || '';
   add('SPARE PART', [['PART NUMBER', 'SUPERSESSION', 'DESCRIPTION', 'BIN', 'MODEL', 'SATUAN', 'SUPPLIER', 'HARGA', 'STOK MIN', 'SHIP', 'SS', 'FREQ', 'STOK SAAT INI'], ...S.parts.map(p => [p.partNo, p.supersession || '', p.name, p.location || '', p.model || '', p.unit || '', suppMap.get(p.supplierId)?.name || '', p.price || 0, p.minStock || 0, p.ship ?? 1, p.ss ?? 1, p.freq ?? 1, stock(p.id)])], [18, 16, 36, 10, 14, 8, 20, 12, 9, 6, 6, 6, 12]);
   add('TRANSAKSI', [['TGL', 'PART NUMBER', 'DESCRIPTION', 'ARAH', 'QTY', 'FORM/TO', 'FORM/CUSTOMER', 'BPB/GR/GI', 'PO CUST/REQ', 'EKSPEDISI', 'AWB/RESI', 'REMARK', 'DICATAT OLEH'], ...S.movements.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.seq ?? 1e9) - (b.seq ?? 1e9))).map(m => [m.date, pn(m.partId), nm(m.partId), m.dir === 'in' ? 'IN' : 'OUT', m.qty, m.kind, partyName(m), m.docNo || '', poText(m), m.ekspedisi || '', m.awb || '', m.note || '', names[m.by] || ''])], [11, 18, 34, 6, 7, 16, 28, 18, 20, 14, 16, 26, 20]);
-  add('CUSTOMER', [['NAMA', 'PLANT', 'PIC', 'TELEPON', 'EMAIL', 'KOTA', 'ALAMAT', 'CATATAN'], ...S.customers.map(c => [c.name, c.plants || '', c.pic || '', c.phone || '', c.email || '', c.city || '', c.address || '', c.note || ''])], [32, 24, 16, 14, 22, 14, 30, 24]);
+  add('CUSTOMER', [['NAMA', 'GRUP', 'PLANT', 'PIC', 'TELEPON', 'EMAIL', 'KOTA', 'ALAMAT', 'CATATAN'], ...S.customers.map(c => [c.name, c.group || '', c.plants || '', c.pic || '', c.phone || '', c.email || '', c.city || '', c.address || '', c.note || ''])], [32, 22, 24, 16, 14, 22, 14, 30, 24]);
   add('SUPPLIER', [['NAMA', 'PIC', 'TELEPON', 'EMAIL', 'KOTA', 'ALAMAT', 'CATATAN'], ...S.suppliers.map(c => [c.name, c.pic || '', c.phone || '', c.email || '', c.city || '', c.address || '', c.note || ''])], [28, 16, 14, 22, 14, 30, 24]);
   const po = []; for (const o of S.pos) for (const it of o.items || []) po.push([o.date, o.poNo, o.plant || '', custMap.get(o.customerId)?.name || '', pn(it.partId), nm(it.partId), it.qty, it.ket || '', it.req || '', o.status === 'batal' ? 'BATAL' : 'AKTIF']);
   add('PO CUSTOMER', [['TGL PO', 'NOMOR PO/QT', 'PLANT', 'CUSTOMER', 'PART NUMBER', 'DESCRIPTION', 'QTY', 'KET', 'REQ', 'STATUS'], ...po], [11, 20, 16, 30, 18, 34, 7, 6, 22, 9]);
@@ -1353,6 +1353,96 @@ function restoreBackup() {
         if (!setMissing && D.settings && D.settings.length) await put('settings', D.settings, x => x);
         toast('Data berhasil dipulihkan'); m.close();
       } catch (err) { console.error(err); $('#rerr', m.el).textContent = 'Pemulihan berhenti: ' + (err.message || err.code || err) + '. Data yang sudah masuk tetap tersimpan; gunakan “Hapus semua data” lalu ulangi.'; busy = false; }
+    }
+  });
+}
+
+/* ============ IMPOR CUSTOMER (CSV / Excel) ============ */
+const custKey = s => normName(String(s || '').toUpperCase().replace(/(^|[\s,.])(PT|CV|TBK|UD|PD)(?=[\s,.]|$)/g, ' '));
+const CUST_ALIASES = {
+  name: ['nama', 'customer', 'nama customer', 'customer name', 'nama perusahaan', 'perusahaan', 'pelanggan', 'name', 'company', 'cust name', 'customer list'],
+  group: ['grup', 'group', 'group customer', 'grup customer', 'holding', 'induk', 'parent', 'kelompok', 'customer group', 'nama grup', 'group name'],
+  plants: ['plant', 'plants', 'estate', 'lokasi', 'site', 'unit usaha'],
+  pic: ['pic', 'kontak', 'contact', 'contact person', 'nama pic'], phone: ['telepon', 'telp', 'phone', 'hp', 'no hp', 'no telp', 'no. telp', 'whatsapp', 'wa'],
+  email: ['email', 'e-mail'], city: ['kota', 'city', 'kabupaten', 'wilayah'], address: ['alamat', 'address'], note: ['catatan', 'note', 'keterangan', 'remark']
+};
+function parseCustomerSheet(rows) {
+  const norm = v => String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' ');
+  let hi = -1, map = null;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const m = {}; (rows[i] || []).forEach((c, j) => { const t = norm(c); if (!t) return; for (const [k, al] of Object.entries(CUST_ALIASES)) if (!(k in m) && al.includes(t)) m[k] = j; });
+    if ('name' in m) { hi = i; map = m; break; }
+  }
+  if (hi < 0) return null;
+  const out = new Map(); let blank = 0;
+  for (let i = hi + 1; i < rows.length; i++) {
+    const r = rows[i] || [], g = k => (k in map ? cleanTxt(r[map[k]]) : ''), name = g('name'); if (!name) { if (r.some(c => c != null && String(c).trim())) blank++; continue; }
+    const key = custKey(name); const cur = out.get(key) || { name, group: '', plants: new Set(), pic: '', phone: '', email: '', city: '', address: '', note: '' };
+    for (const k of ['group', 'pic', 'phone', 'email', 'city', 'address', 'note']) if (!cur[k] && g(k)) cur[k] = g(k);
+    if (g('plants')) g('plants').split(/[;,]/).map(s => s.trim()).filter(Boolean).forEach(p => cur.plants.add(p));
+    out.set(key, cur);
+  }
+  return { rows: [...out.values()].map(c => ({ ...c, plants: [...c.plants] })), blank, cols: Object.keys(map), headerRow: hi + 1 };
+}
+function importCustomers() {
+  if (!canWrite) return denied();
+  if (!window.XLSX) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const m = modal(`<h3>Impor Customer &amp; Grup</h3>
+  <p class="mut" style="margin-top:0">Pilih file <b>Excel (.xlsx) atau CSV</b> berisi daftar customer. Kolom yang dikenali: <b>Nama Customer</b> (wajib), <b>Grup</b>, Plant, PIC, Telepon, Email, Kota, Alamat, Catatan. Nama dicocokkan dengan customer yang sudah ada (tanda baca dan “PT” diabaikan), jadi customer yang sudah ada hanya diperbarui, tidak dobel.</p>
+  <input type="file" id="cf2" accept=".xlsx,.xlsm,.xls,.csv,text/csv"><div id="csel" style="margin-top:8px"></div><div id="cprev" style="margin-top:12px"></div>
+  <div id="copts" hidden><label style="display:block;margin:10px 0 4px"><input type="checkbox" id="cnew" checked> Tambahkan customer yang belum ada di database</label>
+  <label style="display:block;margin:4px 0"><input type="checkbox" id="covr"> Timpa data yang sudah terisi (bila tidak dicentang, hanya mengisi kolom yang masih kosong)</label></div>
+  <div class="err" id="cerr"></div><div id="cprog" class="mut"></div>
+  <div class="actions"><button class="btn" data-x="c">Tutup</button><button class="btn primary" data-x="go" disabled>Impor</button></div>`, { wide: true });
+  let WB = null, P = null, busy = false, plan = null;
+  const FIELDS = ['group', 'pic', 'phone', 'email', 'city', 'address', 'note'];
+  const mkPlan = () => {
+    const have = new Map(S.customers.map(c => [custKey(c.name), c])), covr = $('#covr', m.el).checked, addNew = $('#cnew', m.el).checked, upd = [], add = []; let same = 0;
+    for (const r of P.rows) {
+      const ex = have.get(custKey(r.name));
+      if (!ex) { if (addNew) add.push(r); continue; }
+      const patch = {}; for (const k of FIELDS) if (r[k] && r[k] !== (ex[k] || '') && (covr || !ex[k])) patch[k] = r[k];
+      const ep = (ex.plants || '').split(/[;,]/).map(s => s.trim()).filter(Boolean), np = [...new Set([...ep, ...r.plants])]; if (np.length !== ep.length) patch.plants = np.join(', ');
+      if (Object.keys(patch).length) upd.push({ ex, patch }); else same++;
+    }
+    return { upd, add, same };
+  };
+  const render = () => {
+    plan = mkPlan(); const groups = new Set(P.rows.map(r => r.group).filter(Boolean));
+    $('#cprev', m.el).innerHTML = `<div class="card" style="padding:12px;background:#fafafa"><ul style="margin:0;padding-left:18px;line-height:1.7"><li>Baris customer di file: <b>${fmtN(P.rows.length)}</b> (header di baris ${P.headerRow}; kolom terbaca: ${P.cols.join(', ')})</li>
+    <li>Customer baru ditambahkan: <b>${fmtN(plan.add.length)}</b></li><li>Customer lama diperbarui: <b>${fmtN(plan.upd.length)}</b> · tidak ada perubahan: ${fmtN(plan.same)}</li><li>Jumlah grup: <b>${fmtN(groups.size)}</b>${groups.size ? ' — ' + [...groups].slice(0, 6).map(esc).join(', ') + (groups.size > 6 ? '…' : '') : ''}</li></ul>
+    ${!P.cols.includes('group') ? '<p class="out" style="margin:8px 0 0;font-size:12.5px">Kolom <b>Grup</b> tidak ditemukan di file. Pastikan judul kolomnya “Grup” atau “Group”.</p>' : ''}</div>
+    ${plan.add.length || plan.upd.length ? `<div class="tw" style="max-height:200px;margin-top:8px"><table><thead><tr><th></th><th>Customer</th><th>Grup</th></tr></thead><tbody>${[...plan.add.slice(0, 15).map(r => ['baru', r.name, r.group]), ...plan.upd.slice(0, 15).map(u => ['ubah', u.ex.name, u.patch.group ?? u.ex.group])].map(x => `<tr><td><span class="chip ${x[0] === 'baru' ? 'ok' : 'info'}">${x[0]}</span></td><td>${esc(x[1])}</td><td>${esc(x[2] || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="in" style="margin:8px 0 0">Tidak ada perubahan untuk diimpor.</p>'}`;
+    $('[data-x=go]', m.el).disabled = !(plan.add.length || plan.upd.length);
+  };
+  const load = () => {
+    const er = $('#cerr', m.el); er.textContent = ''; const sn = $('#csh', m.el)?.value || WB.SheetNames[0];
+    const rows = window.XLSX.utils.sheet_to_json(WB.Sheets[sn], { header: 1, raw: false, defval: '' });
+    P = parseCustomerSheet(rows);
+    if (!P) { $('#cprev', m.el).textContent = ''; $('#copts', m.el).hidden = true; er.textContent = `Judul kolom “Nama Customer” tidak ditemukan di sheet “${sn}”. Pastikan baris judul berisi kolom Nama/Customer.`; return; }
+    $('#copts', m.el).hidden = false; render();
+  };
+  $('#cf2', m.el).addEventListener('change', async ev => {
+    const f = ev.target.files[0]; if (!f) return; $('#cerr', m.el).textContent = ''; $('#cprev', m.el).textContent = 'Membaca file…'; await new Promise(r => setTimeout(r, 30));
+    try {
+      const isCsv = /\.csv$/i.test(f.name); WB = isCsv ? window.XLSX.read(await f.text(), { type: 'string', raw: true }) : window.XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      $('#csel', m.el).innerHTML = WB.SheetNames.length > 1 ? `<label class="mut">Sheet: <select id="csh">${WB.SheetNames.map(n => `<option>${esc(n)}</option>`).join('')}</select></label>` : '';
+      load();
+    } catch (e) { console.error(e); P = null; $('#cprev', m.el).textContent = ''; $('#cerr', m.el).textContent = 'Gagal membaca file: ' + (e.message || e); }
+  });
+  m.el.addEventListener('change', e => { if (!WB) return; if (e.target.id === 'csh') load(); else if (P && e.target.closest('#copts')) render(); });
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b || busy) return;
+    if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go' && plan) {
+      busy = true; b.disabled = true; const pg = $('#cprog', m.el), t = nowISO();
+      try {
+        if (plan.add.length) { pg.textContent = `Menambah ${fmtN(plan.add.length)} customer…`; await db.collection('customers').addMany(plan.add.map(r => ({ name: r.name, group: r.group, plants: r.plants.join(', '), pic: r.pic, phone: r.phone, email: r.email, city: r.city, address: r.address, note: r.note, createdAt: t, createdBy: uid, imp: 'customer-list' }))); }
+        let n = 0; const list = plan.upd.slice();
+        const worker = async () => { while (list.length) { const x = list.shift(); await db.doc('customers/' + x.ex.id).update({ ...x.patch, updatedAt: t }); pg.textContent = `Memperbarui customer… ${fmtN(++n)}/${fmtN(plan.upd.length)}`; } };
+        await Promise.all([worker(), worker(), worker(), worker()]);
+        toast(`Customer: ${fmtN(plan.add.length)} ditambah, ${fmtN(plan.upd.length)} diperbarui`); m.close();
+      } catch (err) { console.error(err); $('#cerr', m.el).textContent = 'Impor berhenti: ' + (err.message || err.code || err) + '. Sebagian data mungkin sudah masuk; buka kembali menu ini untuk melanjutkan (yang sudah masuk akan dilewati).'; busy = false; b.disabled = false; }
     }
   });
 }
@@ -1586,19 +1676,21 @@ function partyView(kind) {
   const isC = kind === 'customer', fk = isC ? 'cust' : 'supp', coll = isC ? 'customers' : 'suppliers', lab = isC ? 'Customer' : 'Supplier';
   let rows = [];
   return {
-    shell: `${ro()}${loadNoteHTML}<div class="bar"><input type="search" id="q" placeholder="Cari nama, kota, PIC…" value="${esc(F[fk].q)}"><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite ? `<button class="btn primary" data-act="add">+ ${lab}</button>` : ''}</div><div class="tw"><div id="tbl"></div></div>`,
-    input(e) { if (e.target.id === 'q') { F[fk].q = e.target.value; this.fill(); } },
+    shell: `${ro()}${loadNoteHTML}<div class="bar"><input type="search" id="q" placeholder="${isC ? 'Cari nama, grup, kota, PIC…' : 'Cari nama, kota, PIC…'}" value="${esc(F[fk].q)}">${isC ? '<select id="grp"></select>' : ''}<span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && isC ? '<button class="btn" data-act="xc">Impor Customer &amp; Grup</button>' : ''}${canWrite ? `<button class="btn primary" data-act="add">+ ${lab}</button>` : ''}</div><div class="tw"><div id="tbl"></div></div>`,
+    input(e) { if (e.target.id === 'q') { F[fk].q = e.target.value; this.fill(); } if (e.target.id === 'grp') { F.cust.grp = e.target.value; this.fill(); } },
     act(a, id) {
+      if (a === 'xc') importCustomers();
       if (a === 'add') partyForm(kind);
       if (a === 'edit') partyForm(kind, id);
       if (a === 'del') delParty(kind, id);
-      if (a === 'csv') exportCSV(coll, [['Nama', 'PIC', 'Telepon', 'Email', 'Kota', 'Alamat', 'Catatan'], ...rows.map(x => [x.name, x.pic, x.phone, x.email, x.city, x.address, x.note])]);
+      if (a === 'csv') exportCSV(coll, [isC ? ['Nama', 'Grup', 'Plant', 'PIC', 'Telepon', 'Email', 'Kota', 'Alamat', 'Catatan'] : ['Nama', 'PIC', 'Telepon', 'Email', 'Kota', 'Alamat', 'Catatan'], ...rows.map(x => isC ? [x.name, x.group, x.plants, x.pic, x.phone, x.email, x.city, x.address, x.note] : [x.name, x.pic, x.phone, x.email, x.city, x.address, x.note])]);
     },
     fill() {
       const q = F[fk].q.toLowerCase();
-      rows = S[coll].filter(x => !q || [x.name, x.city, x.pic, x.phone].join(' ').toLowerCase().includes(q)).sort((a, b) => byText(a.name, b.name));
+      if (isC) { const gs = [...new Set(S.customers.map(c => c.group).filter(Boolean))].sort(byText), sel = $('#grp'); if (sel) { sel.hidden = !gs.length; sel.innerHTML = '<option value="">Semua grup</option><option value="__none">(tanpa grup)</option>' + gs.map(g => `<option ${F.cust.grp === g ? 'selected' : ''}>${esc(g)}</option>`).join(''); sel.value = F.cust.grp; } }
+      rows = S[coll].filter(x => (!q || [x.name, x.group, x.plants, x.city, x.pic, x.phone].join(' ').toLowerCase().includes(q)) && (!isC || !F.cust.grp || (F.cust.grp === '__none' ? !x.group : x.group === F.cust.grp))).sort((a, b) => isC ? ((a.group ? 0 : 1) - (b.group ? 0 : 1) || byText(a.group || '', b.group || '') || byText(a.name, b.name)) : byText(a.name, b.name));
       const cnt = x => isC ? S.pos.filter(p => p.customerId === x.id).length : S.movements.filter(m => m.partyId === x.id).length;
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th><th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${canWrite ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th>${isC ? '<th>Grup</th>' : ''}<th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td>${isC ? `<td>${x.group ? `<span class="chip info">${esc(x.group)}</span>` : '<span class="mut">—</span>'}</td>` : ''}<td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${canWrite ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
     }
   };
 }
@@ -1610,6 +1702,7 @@ function partyForm(kind, id) {
   const x = id ? (isC ? custMap : suppMap).get(id) : {};
   const m = modal(`<h3>${id ? 'Edit' : 'Tambah'} ${lab}</h3><form class="grid" id="cf">
     ${fld('Nama perusahaan *', 'name', { val: x.name || '', span: 2, attrs: 'required' })}
+    ${isC ? fld('Grup / holding', 'group', { val: x.group || '', span: 2, ph: 'mis. nama grup perusahaan induk' }) : ''}
     ${isC ? fld('Plant / Estate (pisahkan dengan koma)', 'plants', { val: x.plants || '', span: 2, ph: 'mis. SERVICE, BUNDLING, JALEMO ESTATE' }) : ''}
     ${fld('PIC / kontak', 'pic', { val: x.pic || '' })}${fld('Telepon', 'phone', { val: x.phone || '' })}
     ${fld('Email', 'email', { type: 'email', val: x.email || '' })}${fld('Kota', 'city', { val: x.city || '' })}
