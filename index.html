@@ -160,7 +160,7 @@ let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
 let canWrite = false, canPO = false, isFull = false, loadFailed = false;
 let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
-const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '' }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true }, parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
+const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '' }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
   kartu: { part: '', from: '', to: '' }, cust: { q: '' }, supp: { q: '' }, po: { q: '', st: '' } };
 
 const IN_TYPES = ['IN', 'RETURN CUSTOMER', 'SALDO AWAL', 'KOREKSI (+)'];
@@ -1236,6 +1236,7 @@ function computeSOH(ym) {
   }
   return R;
 }
+const nz = v => (v ? fmtN(v) : '<span style="color:#c4c8cf">–</span>');
 function viewSOH() {
   let rows = [], page = 0; const PS = 100;
   const st = F.soh;
@@ -1245,6 +1246,7 @@ function viewSOH() {
       <label class="mut">Bulan <input type="month" id="ym" value="${st.ym}"></label>
       <input type="search" id="q" placeholder="Cari part number / deskripsi / bin…" value="${esc(st.q)}">
       <label class="mut" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="act" ${st.active ? 'checked' : ''}> Hanya yang ada stok / bergerak</label>
+      <label class="mut" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="mvd" ${st.moved ? 'checked' : ''}> Hanya yang IN/OUT bulan ini</label>
       <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn primary" data-act="xlsx">Export Excel (laporan HO)</button>
     </div><div id="sohcards"></div>
     <div class="tw"><div id="tbl"></div></div><div class="bar" style="margin-top:10px;justify-content:center" id="pg"></div>`,
@@ -1252,6 +1254,7 @@ function viewSOH() {
       if (e.target.id === 'ym') { if (!e.target.value) return; st.ym = e.target.value; }
       if (e.target.id === 'q') st.q = e.target.value;
       if (e.target.id === 'act') st.active = e.target.checked;
+      if (e.target.id === 'mvd') st.moved = e.target.checked;
       page = 0; this.fill();
     },
     act(a) {
@@ -1269,12 +1272,12 @@ function viewSOH() {
         const r = R.get(p.id) || { awal: 0, in: 0, other: 0, ...Object.fromEntries(SOH_OUT.map(o => [o[0], 0])) };
         const out = SOH_OUT.reduce((s, o) => s + r[o[0]], 0) + r.other, akhir = r.awal + r.in - out, com = commit.get(p.id) || 0;
         return { p, ...r, out, akhir, com, free: akhir - com, deliv: r.sold + r.wh + r.bund };
-      }).filter(r => (!st.active || r.awal || r.in || r.out || r.akhir || r.com) && (!q || [r.p.partNo, r.p.name, r.p.location, r.p.supersession].join(' ').toLowerCase().includes(q)));
+      }).filter(r => (!st.active || r.awal || r.in || r.out || r.akhir || r.com) && (!st.moved || r.in || r.out) && (!q || [r.p.partNo, r.p.name, r.p.location, r.p.supersession].join(' ').toLowerCase().includes(q)));
       const tot = rows.reduce((t, r) => { t.awal += r.awal; t.in += r.in; t.out += r.out; t.akhir += r.akhir; t.deliv += r.deliv; t.val += Math.max(0, r.akhir) * (r.p.price || 0); return t; }, { awal: 0, in: 0, out: 0, akhir: 0, deliv: 0, val: 0 });
       $('#sohcards').innerHTML = `<div class="cards"><div class="card stat"><small>Stok awal bulan</small><b>${fmtN(tot.awal)}</b></div><div class="card stat"><small>Total IN</small><b class="in">${fmtN(tot.in)}</b></div><div class="card stat"><small>Total OUT</small><b class="out">${fmtN(tot.out)}</b></div><div class="card stat hl"><small>Stok akhir</small><b>${fmtN(tot.akhir)}</b></div><div class="card stat"><small>Total delivery</small><b>${fmtN(tot.deliv)}</b></div><div class="card stat"><small>Nilai stok akhir</small><b style="font-size:19px">${fmtRp(tot.val)}</b></div></div>`;
       const pages = Math.max(1, Math.ceil(rows.length / PS)); if (page >= pages) page = pages - 1;
       const slice = rows.slice(page * PS, page * PS + PS);
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th class="n">No</th><th>Part Number</th><th>Description</th><th>Bin</th><th class="n">Stok Awal</th><th class="n">Stock Free</th><th class="n">In</th><th class="n">Commited</th>${SOH_OUT.map(o => `<th class="n">${o[2]}</th>`).join('')}<th class="n">Lainnya</th><th class="n">Total Out</th><th class="n">Stok Akhir</th><th class="n">Total Delivery</th></tr></thead><tbody>${slice.map((r, i) => `<tr><td class="n mut">${page * PS + i + 1}</td><td class="mono"><b>${esc(r.p.partNo)}</b>${r.p.supersession ? `<div class="mut" style="font-size:11px">→ ${esc(r.p.supersession)}</div>` : ''}</td><td>${esc(r.p.name)}</td><td>${esc(r.p.location || '')}</td><td class="n">${fmtN(r.awal)}</td><td class="n ${r.free < 0 ? 'out' : ''}"><b>${fmtN(r.free)}</b></td><td class="n in">${r.in ? fmtN(r.in) : ''}</td><td class="n">${r.com ? fmtN(r.com) : ''}</td>${SOH_OUT.map(o => `<td class="n">${r[o[0]] ? fmtN(r[o[0]]) : ''}</td>`).join('')}<td class="n">${r.other ? fmtN(r.other) : ''}</td><td class="n out">${r.out ? fmtN(r.out) : ''}</td><td class="n"><b>${fmtN(r.akhir)}</b></td><td class="n">${r.deliv ? fmtN(r.deliv) : ''}</td></tr>`).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada part yang cocok.' : (loaded.parts ? 'Belum ada spare part.' : 'Memuat…'));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th class="n">No</th><th>Part Number</th><th>Description</th><th>Bin</th><th class="n">Stok Awal</th><th class="n">Stock Free</th><th class="n">In</th><th class="n">Commited</th>${SOH_OUT.map(o => `<th class="n">${o[2]}</th>`).join('')}<th class="n">Lainnya</th><th class="n">Total Out</th><th class="n">Stok Akhir</th><th class="n">Total Delivery</th></tr></thead><tbody>${slice.map((r, i) => `<tr><td class="n mut">${page * PS + i + 1}</td><td class="mono"><b>${esc(r.p.partNo)}</b>${r.p.supersession ? `<div class="mut" style="font-size:11px">→ ${esc(r.p.supersession)}</div>` : ''}</td><td>${esc(r.p.name)}</td><td>${esc(r.p.location || '')}</td><td class="n">${fmtN(r.awal)}</td><td class="n ${r.free < 0 ? 'out' : ''}"><b>${fmtN(r.free)}</b></td><td class="n in">${nz(r.in)}</td><td class="n">${nz(r.com)}</td>${SOH_OUT.map(o => `<td class="n">${nz(r[o[0]])}</td>`).join('')}<td class="n">${nz(r.other)}</td><td class="n out">${nz(r.out)}</td><td class="n"><b>${fmtN(r.akhir)}</b></td><td class="n">${nz(r.deliv)}</td></tr>`).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada part yang cocok.' : (loaded.parts ? 'Belum ada spare part.' : 'Memuat…'));
       $('#pg').innerHTML = rows.length > PS ? `<button class="btn sm" data-act="prev" ${page === 0 ? 'disabled' : ''}>‹ Sebelumnya</button><span class="mut">Halaman ${page + 1} / ${pages} · ${fmtN(rows.length)} part</span><button class="btn sm" data-act="next" ${page >= pages - 1 ? 'disabled' : ''}>Berikutnya ›</button>` : `<span class="mut">${fmtN(rows.length)} part</span>`;
     }
   };
