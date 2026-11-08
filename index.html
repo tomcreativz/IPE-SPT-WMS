@@ -1862,6 +1862,27 @@ function viewPO() {
     }
   };
 }
+function quickAddPart(partNo0, onDone) {
+  if (!canPO) return denied();
+  const m = modal(`<h3>Tambah spare part baru</h3><form id="qp"><div class="grid">
+    ${fld('No. Part *', 'partNo', { val: partNo0, attrs: 'required' })}
+    ${fld('Nama / deskripsi *', 'name', { attrs: 'required' })}
+    ${fld('Lokasi rak / bin', 'location', { ph: 'mis. A-01-2' })}
+    ${fld('Harga jual (Rp)', 'price', { type: 'number', val: 0, attrs: 'min="0" step="any"' })}
+    ${fld('Satuan', 'unit', { val: 'pcs' })}
+    ${fld('Kategori', 'category', { list: 'catlist' })}
+  </div><div class="mut" style="font-size:12px;margin-top:8px">Stok awal 0. Pengaturan lain (SHIP, SS, FREQ, supplier) bisa dilengkapi nanti di Database Spare Part.</div>
+  <div class="err" id="qerr"></div><div class="actions"><button type="button" class="btn" data-x="0">Batal</button><button class="btn primary">Simpan part</button></div></form>`);
+  m.el.querySelector('[data-x="0"]').onclick = () => m.close();
+  m.el.querySelector('#qp').onsubmit = async ev => {
+    ev.preventDefault(); const v = Object.fromEntries(new FormData(ev.target)), partNo = v.partNo.trim().toUpperCase(), er = m.el.querySelector('#qerr');
+    const dup = S.parts.find(x => x.partNo.toUpperCase() === partNo);
+    if (dup) { m.close(); toast('Part ' + partNo + ' sudah ada, memakai yang itu.'); onDone(dup); return; }
+    const data = { partNo, name: v.name.trim(), category: (v.category || '').trim(), model: '', supersession: '', ship: 1, ss: 1, freq: 1, unit: (v.unit || '').trim() || 'pcs', location: (v.location || '').trim(), supplierId: '', price: +v.price || 0, createdAt: nowISO(), createdBy: uid };
+    let id = null; const ok = await guarded(async () => { id = (await db.collection('parts').add(data)).id; });
+    if (ok) { m.close(); toast('Spare part ditambahkan'); onDone(S.parts.find(x => x.id === id) || { id, ...data }); } else er.textContent = 'Gagal menyimpan, coba lagi.';
+  };
+}
 function poForm(id) {
   if (!canPO) return denied();
   if (!S.customers.length && !canCust) { toast('Tambahkan customer terlebih dahulu di menu Database Customer.', 'err'); return; }
@@ -1893,7 +1914,13 @@ function poForm(id) {
       k.innerHTML = r.dataset.ket === 'C' || free >= 0 ? '<span class="chip ok">LENGKAP</span>' : `<span class="chip bad">KURANG ${fmtN(Math.min(tot.get(p.id), -free))}</span>`;
     }
   }
-  function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `Bin ${p.location || '-'} · Stok ${fmtN(stock(p.id))} · Free ${fmtN(stock(p.id) - (commit.get(p.id) || 0) + (ownC.get(p.id) || 0))}` : ''; calcKet(); }
+  function info(d) {
+    const txt = $('.lp', d).value.trim(), p = partFromText(txt), li = $('.li', d);
+    if (p) li.textContent = `Bin ${p.location || '-'} · Stok ${fmtN(stock(p.id))} · Free ${fmtN(stock(p.id) - (commit.get(p.id) || 0) + (ownC.get(p.id) || 0))}`;
+    else if (txt && canPO) li.innerHTML = `<span class="out">Part tidak ada di database.</span> <button type="button" data-x="newpart" style="background:none;border:0;color:#b45309;cursor:pointer;text-decoration:underline;font:inherit;font-size:12px;padding:0">+ Tambah part baru</button>`;
+    else li.textContent = '';
+    calcKet();
+  }
   function addLine(it = {}) {
     const p = it.partId ? (partMap.get(it.partId) || S.parts.find(x => x.id === it.partId)) : null;
     const d = document.createElement('div'); d.className = 'lr'; d.dataset.ket = it.ket || '';
@@ -1907,6 +1934,7 @@ function poForm(id) {
     const x = b.dataset.x;
     if (x === 'c') m.close();
     if (x === 'addl') addLine();
+    if (x === 'newpart') { const row = b.closest('.lr'); quickAddPart($('.lp', row).value.trim(), p => { $('.lp', row).value = partLabel(p); info(row); $('.lq', row).focus(); }); }
     if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); calcKet(); }
     if (x === 'paste') pasteTable(lines => { [...ls.children].forEach(r => { if (!$('.lp', r).value.trim() && !$('.lq', r).value) r.remove(); }); lines.forEach(l => addLine({ partId: l.partId, qty: l.qty })); if (!ls.children.length) addLine(); calcKet(); });
     if (x === 's') {
