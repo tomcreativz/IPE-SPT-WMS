@@ -1713,12 +1713,18 @@ function kartuPDF(p, rows) {
 /* ============ CUSTOMER & SUPPLIER ============ */
 function partyView(kind) {
   const isC = kind === 'customer', fk = isC ? 'cust' : 'supp', coll = isC ? 'customers' : 'suppliers', lab = isC ? 'Customer' : 'Supplier';
+  const canEd = isC ? canCust : canWrite, sel = (F[fk].sel = F[fk].sel || new Set());
   let rows = [];
   return {
-    shell: `${ro(false, isC)}${loadNoteHTML}<div class="bar"><input type="search" id="q" placeholder="${isC ? 'Cari nama, grup, kota, PIC…' : 'Cari nama, kota, PIC…'}" value="${esc(F[fk].q)}">${isC ? '<select id="grp"></select>' : ''}<span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canCust && isC ? '<button class="btn" data-act="xc">Impor Customer &amp; Grup</button>' : ''}${(isC ? canCust : canWrite) ? `<button class="btn primary" data-act="add">+ ${lab}</button>` : ''}</div><div class="tw"><div id="tbl"></div></div>`,
-    input(e) { if (e.target.id === 'q') { F[fk].q = e.target.value; this.fill(); } if (e.target.id === 'grp') { F.cust.grp = e.target.value; this.fill(); } },
+    shell: `${ro(false, isC)}${loadNoteHTML}<div class="bar"><input type="search" id="q" placeholder="${isC ? 'Cari nama, grup, kota, PIC…' : 'Cari nama, kota, PIC…'}" value="${esc(F[fk].q)}">${isC ? '<select id="grp"></select>' : ''}<span id="bk"></span><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canCust && isC ? '<button class="btn" data-act="xc">Impor Customer &amp; Grup</button>' : ''}${(isC ? canCust : canWrite) ? `<button class="btn primary" data-act="add">+ ${lab}</button>` : ''}</div><div class="tw"><div id="tbl"></div></div>`,
+    input(e) {
+      if (e.target.id === 'selall') { for (const x of rows) { if (e.target.checked) sel.add(x.id); else sel.delete(x.id); } this.fill(); return; }
+      if (e.target.dataset.sel) { if (e.target.checked) sel.add(e.target.dataset.sel); else sel.delete(e.target.dataset.sel); this.fill(); return; }
+      if (e.target.id === 'q') { F[fk].q = e.target.value; this.fill(); } if (e.target.id === 'grp') { F.cust.grp = e.target.value; this.fill(); } },
     act(a, id) {
       if (a === 'xc') importCustomers();
+      if (a === 'bulk') bulkEdit(kind, [...sel].filter(i => S[coll].some(x => x.id === i)), () => { sel.clear(); this.fill(); });
+      if (a === 'clrsel') { sel.clear(); this.fill(); }
       if (a === 'add') partyForm(kind);
       if (a === 'edit') partyForm(kind, id);
       if (a === 'del') delParty(kind, id);
@@ -1729,12 +1735,37 @@ function partyView(kind) {
       if (isC) { const gs = [...new Set(S.customers.map(c => c.group).filter(Boolean))].sort(byText), sel = $('#grp'); if (sel) { sel.hidden = !gs.length; sel.innerHTML = '<option value="">Semua grup</option><option value="__none">(tanpa grup)</option>' + gs.map(g => `<option ${F.cust.grp === g ? 'selected' : ''}>${esc(g)}</option>`).join(''); sel.value = F.cust.grp; } }
       rows = S[coll].filter(x => (!q || [x.name, x.group, x.plants, x.city, x.pic, x.phone].join(' ').toLowerCase().includes(q)) && (!isC || !F.cust.grp || (F.cust.grp === '__none' ? !x.group : x.group === F.cust.grp))).sort((a, b) => isC ? ((a.group ? 0 : 1) - (b.group ? 0 : 1) || byText(a.group || '', b.group || '') || byText(a.name, b.name)) : byText(a.name, b.name));
       const cnt = x => isC ? S.pos.filter(p => p.customerId === x.id).length : S.movements.filter(m => m.partyId === x.id).length;
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th>${isC ? '<th>Grup</th>' : ''}<th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td>${isC ? `<td>${x.group ? `<span class="chip info">${esc(x.group)}</span>` : '<span class="mut">—</span>'}</td>` : ''}<td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${(isC ? canCust : canWrite) ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
+      for (const i of [...sel]) if (!S[coll].some(x => x.id === i)) sel.delete(i);
+      const bk = $('#bk'); if (bk) bk.innerHTML = canEd && sel.size ? `<button class="btn primary" data-act="bulk">Ubah Massal (${sel.size})</button><button class="btn" data-act="clrsel">Batal pilih</button>` : '';
+      const allOn = rows.length && rows.every(x => sel.has(x.id));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr>${canEd ? `<th style="width:36px"><input type="checkbox" id="selall" ${allOn ? 'checked' : ''} title="Pilih semua yang tampil" style="width:18px;height:18px"></th>` : ''}<th>Nama</th>${isC ? '<th>Grup</th>' : ''}<th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr ${sel.has(x.id) ? 'style="background:#fff8e1"' : ''}>${canEd ? `<td><input type="checkbox" data-sel="${x.id}" ${sel.has(x.id) ? 'checked' : ''} style="width:18px;height:18px"></td>` : ''}<td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td>${isC ? `<td>${x.group ? `<span class="chip info">${esc(x.group)}</span>` : '<span class="mut">—</span>'}</td>` : ''}<td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${(isC ? canCust : canWrite) ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
     }
   };
 }
 function viewCustomers() { return partyView('customer'); }
 function viewSuppliers() { return partyView('supplier'); }
+function bulkEdit(kind, ids, done) {
+  const isC = kind === 'customer', coll = isC ? 'customers' : 'suppliers', lab = isC ? 'Customer' : 'Supplier';
+  if (!(isC ? canCust : canWrite)) return denied();
+  if (!ids.length) { toast('Pilih minimal satu ' + lab.toLowerCase() + '.', 'err'); return; }
+  const names = ids.map(i => S[coll].find(x => x.id === i)?.name || '').filter(Boolean);
+  const gs = [...new Set(S.customers.map(c => c.group).filter(Boolean))].sort(byText);
+  const row = (label, name, o = {}) => `<div class="f"><span>${label}</span><div style="display:flex;gap:8px;align-items:center"><input name="${name}" ${o.type ? `type="${o.type}"` : ''} ${o.list ? `list="${o.list}"` : ''} placeholder="(kosong = tidak diubah)" style="flex:1"><label class="mut" style="font-size:12px;white-space:nowrap"><input type="checkbox" name="clr_${name}" style="width:auto"> kosongkan</label></div></div>`;
+  const m = modal(`<h3>Ubah Massal ${ids.length} ${lab}</h3>
+  <details style="margin-bottom:10px"><summary class="mut" style="cursor:pointer;font-size:13px">Lihat ${lab.toLowerCase()} yang dipilih</summary><div class="mut" style="font-size:12.5px;max-height:110px;overflow:auto;margin-top:6px">${names.map(esc).join('<br>')}</div></details>
+  <p class="mut" style="margin:0 0 10px;font-size:13px">Isi hanya kolom yang ingin disamakan. Kolom yang dibiarkan kosong tidak diubah. Centang <b>kosongkan</b> untuk menghapus isi kolom itu pada semua yang dipilih.</p>
+  <form id="bf">${isC ? row('Grup / holding', 'group', { list: 'bgl' }) + `<datalist id="bgl">${gs.map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist>` : ''}${row('PIC / kontak', 'pic')}${row('Telepon', 'phone')}${row('Email', 'email')}${row('Kota', 'city')}</form>
+  <div class="err" id="berr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Terapkan ke ${ids.length} ${lab.toLowerCase()}</button></div>`);
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') return m.close();
+    const f = $('#bf', m.el), patch = {};
+    for (const k of ['group', 'pic', 'phone', 'email', 'city']) { const inp = f.elements[k]; if (!inp) continue; if (f.elements['clr_' + k].checked) patch[k] = ''; else if (inp.value.trim()) patch[k] = inp.value.trim(); }
+    if (!Object.keys(patch).length) { $('#berr', m.el).textContent = 'Isi minimal satu kolom yang ingin diubah.'; return; }
+    b.disabled = true; let n = 0;
+    const ok = await guarded(async () => { for (let i = 0; i < ids.length; i += 10) { await Promise.all(ids.slice(i, i + 10).map(id => db.doc(`${coll}/${id}`).update({ ...patch, updatedAt: nowISO() }))); n = Math.min(ids.length, i + 10); b.textContent = `Menyimpan ${n}/${ids.length}…`; } });
+    if (ok) { m.close(); toast(`${ids.length} ${lab.toLowerCase()} diperbarui`); done && done(); } else { b.disabled = false; b.textContent = 'Coba lagi'; }
+  });
+}
 function partyForm(kind, id) {
   if (!(kind === 'customer' ? canCust : canWrite)) return denied();
   const isC = kind === 'customer', coll = isC ? 'customers' : 'suppliers', lab = isC ? 'Customer' : 'Supplier';
