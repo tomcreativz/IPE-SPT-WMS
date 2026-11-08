@@ -513,7 +513,7 @@ function viewParts() {
       <select id="st"><option value="">Semua status</option><option value="Aman">Aman</option><option value="Menipis">Menipis</option><option value="Habis">Habis</option></select>
       <span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
-      ${canWrite ? '<button class="btn" data-act="import">Impor CSV</button><button class="btn" data-act="xl">Impor Excel SOH</button><button class="btn primary" data-act="add">+ Spare Part</button>' : ''}
+      ${canWrite ? '<button class="btn" data-act="import">Impor CSV</button><button class="btn" data-act="xl">Impor Excel SOH</button><button class="btn" data-act="xk">Impor Kartu Stok</button><button class="btn primary" data-act="add">+ Spare Part</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
     bind() { $('#st').value = F.parts.st; },
@@ -530,6 +530,7 @@ function viewParts() {
       if (a === 'kartu') { F.kartu.part = id; location.hash = '#kartu-stok'; }
       if (a === 'import') importParts();
       if (a === 'xl') importExcel();
+      if (a === 'xk') importKartu();
       if (a === 'csv') exportCSV('spare-part', [['No. Part', 'Nama', 'Kategori', 'Model/Aplikasi', 'Satuan', 'Lokasi Rak', 'Supplier', 'Stok', 'Stok Minimum', 'Harga (Rp)', 'Nilai Stok (Rp)', 'Status'], ...rows.map(p => [p.partNo, p.name, p.category, p.model, p.unit, p.location, suppMap.get(p.supplierId)?.name || '', stock(p.id), p.minStock, p.price, stock(p.id) * (p.price || 0), partStatus(p).k])]);
     },
     fill() {
@@ -911,6 +912,137 @@ function importExcel() {
       busy = true; b.disabled = true; const pg = $('#xprog', m.el);
       try { const r = await runImport(P, o, t => { pg.textContent = t; }); toast(`Impor selesai: ${fmtN(r.parts)} part, ${fmtN(r.opening + r.trx)} baris stok/transaksi, ${fmtN(r.pos)} PO, ${fmtN(r.so)} baris SO`); m.close(); }
       catch (err) { console.error(err); $('#xerr', m.el).textContent = 'Impor berhenti: ' + (err.message || err.code || err) + '. Data yang sudah masuk tetap tersimpan; gunakan “Hapus semua data” di Dashboard bila ingin mengulang dari awal.'; busy = false; }
+    }
+  });
+}
+
+/* ============ IMPOR KARTU STOK (riwayat banyak bulan) ============ */
+const normName = s => String(s || '').toUpperCase().replace(/[\s,.‑‐-]+/g, '');
+const cleanTxt = s => cellStr(s).replace(/[‐‑–]/g, '-').replace(/\s+/g, ' ');
+const idStr = v => { if (v == null || v === '') return ''; if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(v); return cleanTxt(v); };
+const IPE_RE = /^(IPE|IPT)\s*(BJM|SMD|BPP|PTK|SBY|JKT|PKY|SGP)$/;
+function kindOfRow(dir, ket, ft) {
+  const k = String(ket || '').toUpperCase().trim(); ft = String(ft || '').toUpperCase().trim();
+  if (ft === 'SMD') ft = 'IPE SMD';
+  if (dir === 'in') {
+    if (ft === 'PART RETURN') return 'RETURN CUSTOMER';
+    if (ft === 'IN') return 'IN';
+    if (IPE_RE.test(k) || k === 'FUCHS') return 'IN';
+    return 'RETURN CUSTOMER';
+  }
+  if (ft && OUT_TYPES.includes(ft)) return ft;
+  const m = k.match(IPE_RE); if (m && m[2] !== 'SGP') return 'IPE ' + m[2];
+  if (/^WH03/.test(k)) return 'WH03 SERVICE';
+  if (/PART RETUR/.test(k)) return 'PART RETURN';
+  if (/WH05|RUSAK|DAMAGE/.test(k)) return 'PART DAMAGE';
+  if (k === 'FUCHS') return 'FUCHS';
+  return 'SOLD CUSTOMER';
+}
+const isInternalParty = k => /^(IPE|IPT)\s/i.test(k) || /^(WH0|FUCHS|PART RET|SMD$)/i.test(k);
+function parseKartu(X, wb) {
+  const dbr = sheetRows(X, wb, 'DATABASE'), dir_ = sheetRows(X, wb, 'DATA INPUT');
+  if (!dbr || !dir_) throw new Error('Sheet "DATABASE" atau "DATA INPUT" tidak ditemukan. Pastikan ini file KARTU STOK IPE SPT.');
+  const hd = cellStr(dbr[0]?.[5]).toUpperCase(), am = hd.match(/(JANUARI|FEBRUARI|MARET|APRIL|MEI|JUNI|JULI|AGUSTUS|SEPTEMBER|OKTOBER|NOVEMBER|DESEMBER)\s+(\d{4})/);
+  const parts = new Map(); let blankPn = 0;
+  for (let i = 1; i < dbr.length; i++) {
+    const r = dbr[i], pn = cellStr(r[1]).toUpperCase(); if (!pn) { continue; }
+    if (parts.has(pn)) { blankPn++; continue; }
+    parts.set(pn, { partNo: pn, supersession: cellStr(r[2]), name: cellStr(r[3]), location: cellStr(r[4]), awal: cellNum(r[5]), tin: cellNum(r[6]), tout: cellNum(r[7]), akhir: cellNum(r[8]) });
+  }
+  const raw = []; let skipEmpty = 0, skipBadDate = 0, both = 0, unknown = new Map(), freq = new Map();
+  for (let i = 1; i < dir_.length; i++) {
+    const r = dir_[i]; if (!r) continue; const pn = cellStr(r[1]).toUpperCase(); const qi = cellNum(r[4]), qo = cellNum(r[5]);
+    if (!pn && !qi && !qo) continue;
+    if (!qi && !qo) { skipEmpty++; continue; } if (qi && qo) { both++; continue; }
+    const date = xlDate(r[0]); if (!date) { skipBadDate++; continue; }
+    if (!parts.has(pn)) { unknown.set(pn, (unknown.get(pn) || 0) + 1); continue; }
+    const ket = cleanTxt(r[2]); const dir = qi ? 'in' : 'out';
+    raw.push({ date, partNo: pn, ket, docNo: idStr(r[3]), qty: qi || qo, dir, ft: cellStr(r[8]), ekspedisi: cellStr(r[9]), poRef: idStr(r[10]), awb: idStr(r[11]), note: cleanTxt(r[12]) });
+    if (!isInternalParty(ket.toUpperCase())) { const n = normName(ket); let m = freq.get(n); if (!m) { m = new Map(); freq.set(n, m); } m.set(ket, (m.get(ket) || 0) + 1); }
+  }
+  const canon = new Map(), merged = [];
+  for (const [n, m] of freq) { const v = [...m.entries()].sort((a, b) => b[1] - a[1]); canon.set(n, v[0][0]); if (v.length > 1) merged.push(v.map(x => x[0])); }
+  const trx = raw.map(x => { const k = kindOfRow(x.dir, x.ket, x.ft); const up = x.ket.toUpperCase(); const party = isInternalParty(up) ? (up === 'IPT PTK' ? 'IPE PTK' : x.ket) : (canon.get(normName(x.ket)) || x.ket); return { ...x, kind: k, party }; });
+  const kinds = {}; for (const t of trx) { const key = t.dir.toUpperCase() + ' · ' + t.kind; kinds[key] = (kinds[key] || 0) + 1; }
+  const calc = new Map(); for (const t of trx) { const c = calc.get(t.partNo) || { i: 0, o: 0 }; if (t.dir === 'in') c.i += t.qty; else c.o += t.qty; calc.set(t.partNo, c); }
+  const mism = []; for (const p of parts.values()) { const c = calc.get(p.partNo) || { i: 0, o: 0 }; if (c.i !== p.tin || c.o !== p.tout || p.awal + c.i - c.o !== p.akhir) mism.push({ partNo: p.partNo, xl: p.akhir, web: p.awal + c.i - c.o }); }
+  const awalTotal = [...parts.values()].reduce((s, p) => s + p.awal, 0), months = new Map();
+  for (const t of trx) { const ym = t.date.slice(0, 7); const m = months.get(ym) || { i: 0, o: 0, n: 0 }; if (t.dir === 'in') m.i += t.qty; else m.o += t.qty; m.n++; months.set(ym, m); }
+  let run = awalTotal; const mrows = [...months.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([ym, m]) => { run += m.i - m.o; return { ym, ...m, akhir: run }; });
+  const custNames = [...new Set(trx.filter(t => t.dir === 'out' && ['SOLD CUSTOMER', 'BUNDLING', 'WH03 SERVICE'].includes(t.kind) && !isInternalParty(t.party.toUpperCase())).map(t => t.party))].sort(byText);
+  return { parts: [...parts.values()], trx, unknown, skipEmpty, skipBadDate, both, merged, kinds, mism, awalTotal, mrows, custNames, awalLabel: am ? `${am[1]} ${am[2]}` : '', awalDate: am ? `${am[2]}-${String(BLN_ID.indexOf(am[1]) + 1).padStart(2, '0')}-01` : '', sohBlank: blankPn };
+}
+async function runKartu(K, soh, o, prog) {
+  const t = nowISO(), imp = 'kartu-stok', sm = new Map((soh?.parts || []).map(p => [p.partNo, p]));
+  const pid = new Map(S.parts.map(p => [p.partNo.toUpperCase(), p.id]));
+  const fresh = K.parts.filter(p => !pid.has(p.partNo)), res = { parts: 0, customers: 0, trx: 0, opening: 0, enriched: 0, closed: 0 };
+  prog(`Mengimpor ${fmtN(fresh.length)} spare part…`);
+  const docs = fresh.map(p => { const s = sm.get(p.partNo); if (s) res.enriched++; return { partNo: p.partNo, name: p.name, category: '', model: s?.model || '', supersession: p.supersession, unit: 'pcs', location: p.location, supplierId: '', minStock: 0, price: s?.price || 0, ship: s?.ship ?? 1, ss: s?.ss ?? 1, freq: s?.freq ?? 1, createdAt: t, createdBy: uid, imp }; });
+  for (const r of await db.collection('parts').addMany(docs)) pid.set(r.data.partNo.toUpperCase(), r.id); res.parts = docs.length;
+  const cust = new Map(S.customers.map(c => [normName(c.name), c.id]));
+  const needC = o.customers ? K.custNames.filter(n => !cust.has(normName(n))) : [];
+  if (needC.length) { prog(`Mengimpor ${fmtN(needC.length)} customer…`); for (const r of await db.collection('customers').addMany(needC.map(n => ({ name: n, pic: '', phone: '', email: '', city: '', address: '', note: '', plants: '', createdAt: t, createdBy: uid, imp })))) cust.set(normName(r.data.name), r.id); res.customers = needC.length; }
+  const mv = [], d0 = K.awalDate || (K.trx[0]?.date.slice(0, 7) + '-01');
+  for (const p of K.parts) if (p.awal > 0) mv.push(mvDoc({ docNo: 'SALDO AWAL ' + (K.awalLabel || d0.slice(0, 7)), date: d0, partId: pid.get(p.partNo), qty: p.awal, dir: 'in', kind: 'SALDO AWAL', note: 'Saldo awal (impor Kartu Stok)', imp }));
+  res.opening = mv.length;
+  for (const x of K.trx) mv.push(mvDoc({ docNo: x.docNo, date: x.date, partId: pid.get(x.partNo), qty: x.qty, dir: x.dir, kind: x.kind, party: x.party, partyId: cust.get(normName(x.party)) || '', poRef: x.poRef, ekspedisi: x.ekspedisi, awb: x.awb, note: x.note, imp }));
+  res.trx = K.trx.length;
+  prog(`Mengimpor ${fmtN(mv.length)} baris stok/transaksi (bertahap)…`);
+  await db.collection('movements').addMany(mv);
+  if (o.close && !setMissing) {
+    const cur = curYM(), ms = K.mrows.map(m => m.ym).filter(ym => ym < cur);
+    const ex = S.settings.find(x => x.key === 'closed'), set = new Set([...(ex?.months || []), ...ms]), months = [...set].sort();
+    prog('Menutup bulan yang sudah lewat…'); if (ex) await db.doc('settings/' + ex.id).update({ months }); else await db.collection('settings').add({ key: 'closed', months }); res.closed = ms.length;
+  }
+  return res;
+}
+function importKartu() {
+  if (!canWrite) return denied();
+  if (!window.XLSX) { toast('Pustaka pembaca Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const blocked = S.movements.length > 0;
+  const m = modal(`<h3>Impor Kartu Stok (riwayat banyak bulan)</h3>
+  <p class="mut" style="margin-top:0">Untuk file <b>KARTU STOK IPE SPT</b> (sheet DATABASE dan DATA INPUT). Membuat spare part, saldo awal, dan seluruh riwayat transaksi dari awal sampai terakhir. File dibaca di browser Anda.</p>
+  ${blocked ? '<div class="banner warn">Database sudah berisi transaksi. Impor riwayat penuh hanya untuk database yang masih kosong. Hapus data lewat tombol “Hapus semua data” di Dashboard, lalu coba lagi.</div>' : ''}
+  <label class="f"><span><b>1.</b> File KARTU STOK IPE SPT (.xlsx)</span><input type="file" id="kf" accept=".xlsx,.xlsm" ${blocked ? 'disabled' : ''}></label>
+  <label class="f" style="margin-top:8px"><span><b>2.</b> (Opsional) File SOH SPT untuk melengkapi <b>harga, model, SHIP/SS/FREQ</b> spare part</span><input type="file" id="sf" accept=".xlsx,.xlsm" ${blocked ? 'disabled' : ''}></label>
+  <div id="kprev" style="margin-top:12px"></div>
+  <div id="kopts" hidden>
+    <label style="display:block;margin:10px 0 4px"><input type="checkbox" id="kc" checked> Buat daftar customer dari data transaksi</label>
+    <label style="display:block;margin:4px 0"><input type="checkbox" id="kx" ${setMissing ? 'disabled' : 'checked'}> Tutup otomatis semua bulan yang sudah lewat (bulan berjalan tetap terbuka) ${setMissing ? '<span class="mut">(tabel pengaturan belum ada)</span>' : ''}</label>
+  </div><div class="err" id="kerr"></div><div id="kprog" class="mut"></div>
+  <div class="actions"><button class="btn" data-x="c">Tutup</button><button class="btn primary" data-x="go" disabled>Impor</button></div>`, { wide: true });
+  let K = null, SO = null, busy = false;
+  const read = async f => window.XLSX.read(await f.arrayBuffer(), { type: 'array' });
+  const render = () => {
+    const pv = $('#kprev', m.el); if (!K) { pv.textContent = ''; return; }
+    const exist = new Set(S.parts.map(p => p.partNo.toUpperCase())), nNew = K.parts.filter(p => !exist.has(p.partNo)).length;
+    const kc = Object.entries(K.kinds).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)}: ${fmtN(v)}`).join(' &nbsp;·&nbsp; ');
+    pv.innerHTML = `<div class="card" style="padding:12px;background:#fafafa"><ul style="margin:0;padding-left:18px;line-height:1.7">
+    <li>Spare part: <b>${fmtN(K.parts.length)}</b> (${fmtN(nNew)} baru) · saldo awal ${esc(K.awalLabel)}: <b>${fmtN(K.awalTotal)}</b> pcs</li>
+    <li>Transaksi: <b>${fmtN(K.trx.length)}</b> baris, ${esc(K.mrows[0]?.ym || '')} s/d ${esc(K.mrows.at(-1)?.ym || '')}</li>
+    <li>Customer terdeteksi: <b>${fmtN(K.custNames.length)}</b>${K.merged.length ? ` (${K.merged.length} nama ditulis berbeda-beda dan disatukan, mis. “${esc(K.merged[0][0])}” = “${esc(K.merged[0][1])}”)` : ''}</li>
+    <li>Jenis transaksi: ${kc}</li>
+    ${SO ? `<li>Harga/model dari file SOH: <b>${fmtN(SO.parts.filter(p => p.price > 0).length)}</b> part berharga</li>` : '<li class="mut">File SOH belum dipilih: harga dan model spare part akan kosong (bisa diimpor belakangan).</li>'}</ul>
+    ${K.unknown.size ? `<p class="out" style="margin:8px 0 0;font-size:12.5px">${fmtN([...K.unknown.values()].reduce((a, b) => a + b, 0))} baris dilewati karena part tidak ada di sheet DATABASE: ${[...K.unknown.keys()].slice(0, 5).map(esc).join(', ')}</p>` : ''}
+    ${(K.skipBadDate || K.both || K.skipEmpty) ? `<p class="out" style="margin:8px 0 0;font-size:12.5px">Dilewati: ${fmtN(K.skipBadDate)} tanpa tanggal valid, ${fmtN(K.both)} berisi IN dan OUT sekaligus, ${fmtN(K.skipEmpty)} tanpa jumlah.</p>` : ''}
+    ${K.mism.length ? `<p class="out" style="margin:8px 0 0;font-size:12.5px"><b>${fmtN(K.mism.length)} part</b> total IN/OUT/stok akhirnya tidak sama dengan sheet DATABASE (mis. ${K.mism.slice(0, 3).map(x => `${esc(x.partNo)}: Excel ${x.xl}, web ${x.web}`).join('; ')}).</p>` : '<p class="in" style="margin:8px 0 0;font-size:12.5px">Total IN, OUT, dan stok akhir semua part cocok dengan sheet DATABASE.</p>'}
+    </div><div class="tw" style="max-height:220px;margin-top:10px"><table><thead><tr><th>Bulan</th><th class="n">Baris</th><th class="n">IN</th><th class="n">OUT</th><th class="n">Stok akhir</th></tr></thead><tbody>${K.mrows.map(r => `<tr><td>${esc(r.ym)}</td><td class="n">${fmtN(r.n)}</td><td class="n in">${fmtN(r.i)}</td><td class="n out">${fmtN(r.o)}</td><td class="n"><b>${fmtN(r.akhir)}</b></td></tr>`).join('')}</tbody></table></div>`;
+    $('#kopts', m.el).hidden = false; $('[data-x=go]', m.el).disabled = false;
+  };
+  const onFile = async (which, ev) => {
+    const f = ev.target.files[0]; if (!f) return; const er = $('#kerr', m.el); er.textContent = ''; $('#kprev', m.el).textContent = 'Membaca file… (file besar bisa memakan beberapa detik)';
+    await new Promise(r => setTimeout(r, 30));
+    try { const wb = await read(f); if (which === 'k') K = parseKartu(window.XLSX, wb); else SO = parseSOH(window.XLSX, wb); render(); }
+    catch (e) { console.error(e); if (which === 'k') K = null; else SO = null; $('#kprev', m.el).textContent = ''; er.textContent = 'Gagal membaca file: ' + (e.message || e); if (K) render(); }
+  };
+  $('#kf', m.el).addEventListener('change', e => onFile('k', e)); $('#sf', m.el).addEventListener('change', e => onFile('s', e));
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b || busy) return;
+    if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go' && K) {
+      busy = true; b.disabled = true; const pg = $('#kprog', m.el);
+      try { const r = await runKartu(K, SO, { customers: $('#kc', m.el).checked, close: $('#kx', m.el).checked }, t => { pg.textContent = t; }); toast(`Impor selesai: ${fmtN(r.parts)} part, ${fmtN(r.opening + r.trx)} baris stok/transaksi, ${fmtN(r.customers)} customer${r.closed ? `, ${r.closed} bulan ditutup` : ''}`); m.close(); }
+      catch (err) { console.error(err); $('#kerr', m.el).textContent = 'Impor berhenti: ' + (err.message || err.code || err) + '. Data yang sudah masuk tetap tersimpan; gunakan “Hapus semua data” di Dashboard untuk mengulang dari awal.'; busy = false; }
     }
   });
 }
