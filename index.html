@@ -119,7 +119,7 @@ table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-ove
 .lines .lr{border-top:1px solid #f0f1f3}
 .lines input{padding:7px 9px;border:1px solid #d1d5db;border-radius:6px;width:100%}
 .lines.tx .lh,.lines.tx .lr{grid-template-columns:1fr 90px 90px 70px 70px 32px}.lines.tx .c{text-align:center}.lines.tx .lb{font-weight:600;white-space:nowrap}.lines.tx .lk,.lines.tx .lg{font-weight:600;font-variant-numeric:tabular-nums}
-.lines.po .lh,.lines.po .lr{grid-template-columns:1.6fr 80px 130px 1fr 32px}
+.lines.po .lh,.lines.po .lr{grid-template-columns:1.6fr 80px 130px 1fr 32px}.lines.po .lk{white-space:nowrap}
 .lines.so .lh,.lines.so .lr{grid-template-columns:1fr 90px 110px 70px 70px 32px}.lines.so .c{text-align:center}.lines.so .lk,.lines.so .lg{font-weight:600;font-variant-numeric:tabular-nums}.lines.so .lg{color:#b45309}
 @media(max-width:700px){.grid{grid-template-columns:1fr}.f.s2{grid-column:span 1}.lines .lh{display:none}.lines.po .lr{grid-template-columns:1fr 1fr}.lines.tx .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.tx .lr .lp{grid-column:1/4}.lines.tx .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.tx .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.tx .lg::before{content:'Free ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.so .lr .lp{grid-column:1/4}.lines.so .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.so .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lg::before{content:'Saran ';font-weight:400;font-size:11px;color:var(--mut)}}
 .err{color:var(--bad);font-size:12.5px;margin-top:10px;min-height:16px}
@@ -1829,35 +1829,51 @@ function viewPO() {
 }
 function poForm(id) {
   if (!canPO) return denied();
-  if (!S.customers.length) { toast('Tambahkan customer terlebih dahulu di menu Database Customer.', 'err'); return; }
+  if (!S.customers.length && !canCust) { toast('Tambahkan customer terlebih dahulu di menu Database Customer.', 'err'); return; }
   if (!S.parts.length) { toast('Tambahkan spare part terlebih dahulu.', 'err'); return; }
   const po = id ? poMap.get(id) : {};
   const m = modal(`<h3>${id ? 'Edit' : 'Tambah'} PO Customer</h3><form id="pf"><div class="grid">
     ${fld('No. PO / QT *', 'poNo', { val: po.poNo || '', attrs: 'required', ph: 'mis. QT 26250061' })}
-    ${fld('Customer *', 'customerId', { val: po.customerId || '', opts: [['', '— pilih customer —'], ...S.customers.slice().sort((a, b) => byText(a.name, b.name)).map(c => [c.id, c.name])], attrs: 'required' })}
+    ${fld('Customer *', 'customerId', { val: po.customerId || '', opts: [['', '— pilih customer —'], ...(canCust ? [['__new', '➕ Customer baru…']] : []), ...S.customers.slice().sort((a, b) => byText(a.name, b.name)).map(c => [c.id, c.name])], attrs: 'required' })}
     ${fld('Plant / Estate', 'plant', { val: po.plant || '', list: 'plantlist', ph: 'mis. SERVICE, BUNDLING, nama estate' })}
     ${fld('Tanggal PO', 'date', { type: 'date', val: po.date || today(), attrs: 'required' })}
     ${fld('Catatan', 'note', { type: 'textarea', span: 2, val: po.note || '' })}
   </div>
-  <div class="lines po"><div class="lh"><span>Part number</span><span>Qty</span><span>KET</span><span>REQ / catatan baris</span><span></span></div><div id="ls"></div>
-  <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <span class="mut" style="font-size:12px">KET “C” = stok terpenuhi (otomatis dianggap LENGKAP). Kekurangan dihitung otomatis dari stock free.</span></div></div></form>
+  <div id="ncbox" class="grid" hidden style="padding:10px 12px;margin-top:10px;background:#fff8e1;border:1px solid #f3d98b;border-radius:10px">
+    ${fld('Nama customer baru *', 'newName', { span: 1, ph: 'mis. MITRA JAYA CEMERLANG, PT' })}${fld('Grup / holding (opsional)', 'newGroup', { span: 1, list: 'ncgl', ph: 'mis. ASTRA GROUP' })}
+    <datalist id="ncgl">${[...new Set(S.customers.map(c => c.group).filter(Boolean))].sort(byText).map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist>
+    <div class="mut" style="grid-column:1/-1;font-size:12px">Customer ini otomatis ditambahkan ke Database Customer saat PO disimpan. Data PIC, telepon, dan kota bisa dilengkapi nanti.</div>
+  </div>
+  <div class="lines po"><div class="lh"><span>Part number</span><span>Qty</span><span>Keterangan</span><span>REQ / catatan baris</span><span></span></div><div id="ls"></div>
+  <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm" data-x="paste">📋 Tempel tabel dari SAP</button> <span class="mut" style="font-size:12px">Keterangan terisi otomatis: LENGKAP bila stock free masih mencukupi, KURANG bila tidak.</span></div></div></form>
   <div class="err" id="perr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan PO</button></div>`, { wide: true });
-  const el = m.el, ls = $('#ls', el);
-  function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `Bin ${p.location || '-'} · Stok ${fmtN(stock(p.id))} · Free ${fmtN(stock(p.id) - (commit.get(p.id) || 0))}` : ''; }
+  const el = m.el, ls = $('#ls', el), CF = $('[name=customerId]', el), ncb = $('#ncbox', el);
+  CF.addEventListener('change', () => { ncb.hidden = CF.value !== '__new'; if (!ncb.hidden) $('[name=newName]', el).focus(); });
+  const ownC = new Map(); if (id && po.status !== 'batal') for (const l of poInfo(po).lines) ownC.set(l.partId, (ownC.get(l.partId) || 0) + l.sisa);
+  function calcKet() {
+    const tot = new Map(); for (const r of ls.children) { const p = partFromText($('.lp', r).value), q = parseFloat($('.lq', r).value) || 0; if (p) tot.set(p.id, (tot.get(p.id) || 0) + q); }
+    for (const r of ls.children) {
+      const p = partFromText($('.lp', r).value), k = $('.lk', r); if (!p || !(parseFloat($('.lq', r).value) > 0)) { k.innerHTML = ''; continue; }
+      const free = stock(p.id) - ((commit.get(p.id) || 0) - (ownC.get(p.id) || 0)) - tot.get(p.id);
+      k.innerHTML = r.dataset.ket === 'C' || free >= 0 ? '<span class="chip ok">LENGKAP</span>' : `<span class="chip bad">KURANG ${fmtN(Math.min(tot.get(p.id), -free))}</span>`;
+    }
+  }
+  function info(d) { const p = partFromText($('.lp', d).value); $('.li', d).textContent = p ? `Bin ${p.location || '-'} · Stok ${fmtN(stock(p.id))} · Free ${fmtN(stock(p.id) - (commit.get(p.id) || 0) + (ownC.get(p.id) || 0))}` : ''; calcKet(); }
   function addLine(it = {}) {
-    const p = it.partId ? partMap.get(it.partId) : null;
-    const d = document.createElement('div'); d.className = 'lr';
-    d.innerHTML = `<div><input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><small class="li mut"></small></div><input class="lq" type="number" min="0" step="any" value="${it.qty || ''}" placeholder="0"><select class="lk"><option value="">Otomatis</option><option value="C" ${it.ket === 'C' ? 'selected' : ''}>C (terpenuhi)</option></select><input class="lrq" value="${esc(it.req || '')}" placeholder="mis. SS =716/09800"><button type="button" class="btn sm" data-x="rm">×</button>`;
+    const p = it.partId ? (partMap.get(it.partId) || S.parts.find(x => x.id === it.partId)) : null;
+    const d = document.createElement('div'); d.className = 'lr'; d.dataset.ket = it.ket || '';
+    d.innerHTML = `<div><input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><small class="li mut"></small></div><input class="lq" type="number" min="0" step="any" value="${it.qty || ''}" placeholder="0"><span class="lk"></span><input class="lrq" value="${esc(it.req || '')}" placeholder="mis. SS =716/09800"><button type="button" class="btn sm" data-x="rm">×</button>`;
     ls.appendChild(d); info(d);
   }
-  ls.addEventListener('input', e => { if (e.target.classList.contains('lp')) info(e.target.closest('.lr')); });
+  ls.addEventListener('input', e => { if (e.target.classList.contains('lp')) info(e.target.closest('.lr')); else if (e.target.classList.contains('lq')) calcKet(); });
   (po.items && po.items.length ? po.items : [{}]).forEach(addLine);
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return;
     const x = b.dataset.x;
     if (x === 'c') m.close();
     if (x === 'addl') addLine();
-    if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); }
+    if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); calcKet(); }
+    if (x === 'paste') pasteTable(lines => { [...ls.children].forEach(r => { if (!$('.lp', r).value.trim() && !$('.lq', r).value) r.remove(); }); lines.forEach(l => addLine({ partId: l.partId, qty: l.qty })); if (!ls.children.length) addLine(); calcKet(); });
     if (x === 's') {
       const f = $('#pf', el), err = $('#perr', el); err.textContent = '';
       if (!f.reportValidity()) return;
@@ -1869,14 +1885,20 @@ function poForm(id) {
         const p = partFromText(raw);
         if (!p) { err.textContent = `Part “${raw}” tidak ditemukan. Pilih dari daftar.`; return; }
         if (!(q > 0)) { err.textContent = `Qty untuk ${p.partNo} harus lebih dari 0.`; return; }
-        const ket = $('.lk', r).value, req = $('.lrq', r).value.trim();
+        const ket = r.dataset.ket || '', req = $('.lrq', r).value.trim();
         const ex = items.find(i => i.partId === p.id); if (ex) { ex.qty += q; if (ket) ex.ket = ket; if (req) ex.req = req; } else items.push({ partId: p.id, qty: q, ket, req });
       }
       if (!items.length) { err.textContent = 'Isi minimal satu baris spare part.'; return; }
       if (S.pos.some(x2 => x2.id !== id && x2.poNo.trim().toLowerCase() === v.poNo.trim().toLowerCase())) { err.textContent = 'No. PO/QT ini sudah ada. Gunakan nomor yang berbeda atau edit PO yang sudah ada.'; return; }
+      let newCust = null;
+      if (v.customerId === '__new') {
+        const nm = (v.newName || '').trim(); if (!nm) { err.textContent = 'Isi nama customer baru.'; return; }
+        const dup = S.customers.find(c => normName(c.name) === normName(nm) || custKey(c.name) === custKey(nm));
+        if (dup) { v.customerId = dup.id; CF.value = dup.id; ncb.hidden = true; toast('Customer “' + dup.name + '” sudah ada, memakai yang itu.'); } else newCust = { name: nm, group: (v.newGroup || '').trim() };
+      }
       b.disabled = true;
       const data = { poNo: v.poNo.trim(), customerId: v.customerId, plant: (v.plant || '').trim(), date: v.date, note: (v.note || '').trim(), items, updatedAt: nowISO() };
-      const ok = await guarded(async () => { if (id) await db.doc('pos/' + id).update(data); else await db.collection('pos').add({ ...data, status: 'aktif', createdAt: nowISO(), createdBy: uid }); });
+      const ok = await guarded(async () => { if (newCust) { const c = await db.collection('customers').add({ ...newCust, plants: '', pic: '', phone: '', email: '', city: '', address: '', note: '', createdAt: nowISO(), createdBy: uid }); data.customerId = c.id; } if (id) await db.doc('pos/' + id).update(data); else await db.collection('pos').add({ ...data, status: 'aktif', createdAt: nowISO(), createdBy: uid }); });
       if (ok) { m.close(); toast('PO tersimpan'); } else b.disabled = false;
     }
   });
