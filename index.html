@@ -1640,6 +1640,7 @@ function viewKartu() {
       <input id="kp" list="plist" placeholder="Ketik no. part / nama spare part…" style="min-width:300px" value="${esc(partMap.get(F.kartu.part) ? partLabel(partMap.get(F.kartu.part)) : '')}">
       <label class="mut">Dari <input type="date" id="from" value="${F.kartu.from}"></label>
       <label class="mut">Sampai <input type="date" id="to" value="${F.kartu.to}"></label>
+      <button class="btn" data-act="reset" title="Kosongkan no. part dan tanggal">Reset</button>
       <span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button><button class="btn primary" data-act="pdf">Unduh PDF</button>
     </div><div id="kc"></div>`,
@@ -1649,6 +1650,7 @@ function viewKartu() {
       if (e.target.id === 'to') { F.kartu.to = e.target.value; this.fill(); }
     },
     act(a) {
+      if (a === 'reset') { F.kartu.part = ''; F.kartu.from = ''; F.kartu.to = ''; for (const id of ['kp', 'from', 'to']) { const i = $('#' + id); if (i) i.value = ''; } this.fill(); const kp = $('#kp'); if (kp) kp.focus(); return; }
       if (!cur) { toast('Pilih spare part terlebih dahulu.', 'err'); return; }
       const rows = kartuRows(cur);
       if (a === 'csv') exportCSV('kartu-stok-' + cur.p.partNo, [['KARTU STOCK', 'WH IPE Sampit'], ['Part Number', cur.p.partNo], ['Description', cur.p.name], ['Bin Location', cur.p.location || ''], ['Supersession', cur.p.supersession || ''], [], ['DATE', 'KETERANGAN', 'REMARK', 'IN', 'OUT', 'STOCK'], ...rows.map(r => [fmtD(r.date), r.ket, r.remark, r.i || '', r.o || '', r.bal])]);
