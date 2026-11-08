@@ -691,6 +691,7 @@ function viewMoves() {
       <select id="kind"></select>
       <label class="mut">Dari <input type="date" id="from" value="${st.from}"></label>
       <label class="mut">Sampai <input type="date" id="to" value="${st.to}"></label>
+      <button class="btn" data-act="thismonth">Bulan ini</button>
       <span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
       ${canWrite ? '<button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
@@ -699,6 +700,11 @@ function viewMoves() {
     input(e) { const k = { q: 'q', kind: 'kind', from: 'from', to: 'to' }[e.target.id]; if (k) { st[k] = e.target.value; this.fill(); } },
     act(a, id) {
       if (a === 'tab') { st.dir = id || ''; st.kind = ''; this.fill(); }
+      if (a === 'thismonth') {
+        const t = today(), y = +t.slice(0, 4), mo = +t.slice(5, 7), last = new Date(y, mo, 0).getDate();
+        st.from = t.slice(0, 8) + '01'; st.to = t.slice(0, 8) + String(last).padStart(2, '0');
+        $('#from').value = st.from; $('#to').value = st.to; this.fill();
+      }
       if (a === 'addin') openTx('in');
       if (a === 'addout') openTx('out');
       if (a === 'del') delMove(id);
