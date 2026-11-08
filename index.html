@@ -42,6 +42,15 @@ nav .sep{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:#6b
 .stat small{color:var(--mut);font-weight:500;display:block;margin-bottom:6px}
 .stat b{font-size:24px;letter-spacing:-.5px}
 .stat.hl{border-left:4px solid var(--y)}
+.revcard{grid-column:span 2;background:#1f2229;color:#fff;border-left:4px solid var(--y);display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.revcard small{display:block;color:#9aa0ac;font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase}
+.revcard .rv{font-size:26px;font-weight:700;letter-spacing:-.5px;margin:4px 0 12px;white-space:nowrap}
+.revcard .tg{color:#aeb3bd;font-size:15px;font-weight:600;margin-top:3px;white-space:nowrap}
+.revcard .tgb{background:none;border:0;color:var(--y);cursor:pointer;font-size:12px;padding:0 0 0 6px;text-decoration:underline}
+.revcard .ring{position:relative;width:96px;height:96px;flex:none}
+.revcard .ring svg{width:96px;height:96px;transform:rotate(-90deg)}
+.revcard .ring span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px}
+@media(max-width:560px){.revcard{grid-column:span 1}}
 .stat.bad{border-left:4px solid #ef4444}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 @media(max-width:1000px){.row2{grid-template-columns:1fr}}
@@ -399,6 +408,27 @@ const errDetail = k => { const e = tblErr[k]; return e ? `<div style="margin-top
 const loadNoteHTML = '<div id="loadnote" class="banner warn" hidden>Data belum bisa dijangkau. Periksa koneksi internet; data yang tampil mungkin belum yang terbaru.</div>';
 const empty = (t) => `<div class="empty">${t}</div>`;
 
+/* ============ TARGET REVENUE ============ */
+const targetOf = yr => { const it = S.settings.find(x => x.key === 'target'); return +(it?.years?.[yr]) || 0; };
+const canTarget = () => myRole === 'staff' || myRole === 'manager';
+function revCardHTML(rev, yr) {
+  const tg = targetOf(yr), pct = tg > 0 ? rev / tg * 100 : 0, R = 42, C = 2 * Math.PI * R, dash = C * Math.min(100, pct) / 100;
+  const edit = canTarget() && !setMissing ? `<button class="tgb" data-act="target" title="Atur target tahunan">${tg ? 'Ubah' : 'Atur target'}</button>` : '';
+  return `<div class="card stat revcard"><div style="min-width:0"><small>Total revenue ${yr}</small><div class="rv">${fmtRp(rev)}</div>
+    <small>vs target ${yr}</small><div class="tg">${tg ? fmtRp(tg) : 'Belum diatur'}${edit}</div></div>
+    <div class="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="${R}" fill="none" stroke="#3a3e48" stroke-width="9"/><circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--y)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${dash.toFixed(2)} ${C.toFixed(2)}"/></svg><span>${tg ? pct.toFixed(1) + '%' : '–'}</span></div></div>`;
+}
+async function editTarget(yr) {
+  if (!canTarget()) return denied();
+  const m = modal(`<h3>Target revenue ${yr}</h3><form id="tf"><div class="grid">${fld('Target tahunan (Rp)', 'amt', { type: 'number', val: targetOf(yr) || '', attrs: 'min="0" step="any" required', ph: 'mis. 11070000000' })}</div><div class="actions"><button type="button" class="btn" data-x="0">Batal</button><button class="btn primary">Simpan</button></div></form>`);
+  m.el.querySelector('[data-x="0"]').onclick = () => m.close();
+  m.el.querySelector('#tf').onsubmit = async ev => {
+    ev.preventDefault(); const amt = +m.el.querySelector('[name=amt]').value; if (!(amt >= 0)) return;
+    const cur = S.settings.find(x => x.key === 'target'), years = { ...(cur?.years || {}), [yr]: amt };
+    const ok = await guarded(async () => { if (cur) await db.doc('settings/' + cur.id).update({ years }); else await db.collection('settings').add({ key: 'target', years }); });
+    if (ok) { m.close(); toast('Target disimpan'); current.fill && current.fill(); }
+  };
+}
 /* ============ DASHBOARD ============ */
 /* ============ ANALITIK (movement, min/max, re-order, urgensi) ============ */
 const DELIV_KINDS = ['SOLD CUSTOMER', 'WH03 SERVICE', 'BUNDLING'];
@@ -438,7 +468,7 @@ function viewDashboard() {
   return {
     shell: `${ro()}${loadNoteHTML}<div class="bar"><label class="mut">Tahun <select id="yr"></select></label></div><div id="dash"></div>`,
     input(e) { if (e.target.id === 'yr') { F.dash.year = +e.target.value; this.fill(); } },
-    act(a) { if (a === 'sample') loadSample(); if (a === 'wipe') wipeAll(); if (a === 'bkj') backupJSON(); if (a === 'bkx') backupXLSX(); if (a === 'restore') restoreBackup(); },
+    act(a) { if (a === 'target') return editTarget(F.dash.year); if (a === 'sample') loadSample(); if (a === 'wipe') wipeAll(); if (a === 'bkj') backupJSON(); if (a === 'bkx') backupXLSX(); if (a === 'restore') restoreBackup(); },
     fill() {
       const box = $('#dash'), parts = S.parts, yr = F.dash.year;
       const years = [...new Set([new Date().getFullYear(), ...S.movements.map(m => +(m.date || '').slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
@@ -463,7 +493,7 @@ function viewDashboard() {
       box.innerHTML = `
       ${emptyDb ? `<div class="card" style="margin-bottom:16px"><h2>Selamat datang di WMS Gudang Sampit</h2><p class="mut" style="margin:0 0 12px">Database masih kosong. Mulai dengan menambah spare part satu per satu atau impor dari CSV di menu <b>Database Spare Part</b>. Anda juga bisa memuat data contoh untuk mencoba semua fitur.</p><div class="bar" style="margin:0"><a class="btn primary" href="#spare-part">Buka Database Spare Part</a>${canWrite ? '<button class="btn" data-act="sample">Muat data contoh</button>' : ''}${isFull ? '<button class="btn" data-act="restore">Pulihkan dari backup</button>' : ''}</div></div>` : ''}
       <div class="cards">
-        <div class="card stat hl"><small>Total revenue ${yr}</small><b style="font-size:20px">${fmtRp(rev)}</b></div>
+        ${revCardHTML(rev, yr)}
         <div class="card stat"><small>Total stock value</small><b style="font-size:20px">${fmtRp(totVal)}</b></div>
         <div class="card stat"><small>Total stock qty</small><b>${fmtN(totQty)}</b></div>
         <div class="card stat"><small>Total delivery ${yr} (qty)</small><b>${fmtN(delQty)}</b></div>
