@@ -1773,11 +1773,12 @@ function viewPO() {
     shell: `${ro(true)}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
       <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipicking', 'Stok kurang'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
+      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="pickall">Picking Gabungan</button>${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; this.fill(); },
     act(a, id) {
       if (a === 'add') poForm();
+      if (a === 'pickall') pickSelect();
       if (a === 'xpo') importPOFromSOH();
       if (a === 'view') poDetail(id);
       if (a === 'csv') exportCSV('po-customer', [['TGL PO', 'NOMOR PO/QT', 'PLANT', 'PART NUMBER', 'CUSTOMER', 'BIN', 'DETAIL', 'QTY', 'KET', 'FREE', 'STOCK', 'STATUS', 'DELIVERY', 'REQ'],
@@ -1866,7 +1867,7 @@ function poDetail(id) {
     }
     if (x === 'cancel' || x === 'reopen') { if (await guarded(() => db.doc('pos/' + id).update({ status: x === 'cancel' ? 'batal' : 'aktif' }))) { m.close(); toast(x === 'cancel' ? 'PO dibatalkan' : 'PO diaktifkan'); } }
     if (x === 'del') { if (dels.length) { toast('PO ini sudah punya pengiriman, jadi tidak bisa dihapus. Gunakan “Batalkan PO”.', 'err'); return; } if (await confirmBox('Hapus PO ' + po.poNo + '?')) { if (await guarded(() => db.doc('pos/' + id).delete())) { m.close(); toast('PO dihapus'); } } }
-    if (x === 'pick') openPicking(po, inf, c);
+    if (x === 'pick') openPicking([{ po, inf, c }]);
     if (x === 'picked' || x === 'unpicked') { if (await setPicked(po, x === 'picked')) m.close(); }
     if (x === 'pdf') {
       const doc = pdfDoc('PURCHASE ORDER CUSTOMER', 'No. PO/QT: ' + pdfSafe(po.poNo)); if (!doc) return;
@@ -1881,10 +1882,10 @@ function poDetail(id) {
 }
 
 /* ============ PICKING LIST ============ */
-async function setPicked(po, on) {
+async function setPicked(po, on, quiet) {
   if (!canWrite) { denied(); return false; }
   const ok = await guarded(() => db.doc('pos/' + po.id).update({ picked: on ? { at: nowISO(), by: names[uid] || myEmail || '' } : null }));
-  if (ok) toast(on ? 'PO ditandai sudah dipicking' : 'Tanda picking dihapus');
+  if (ok && !quiet) toast(on ? 'PO ditandai sudah dipicking' : 'Tanda picking dihapus');
   return !!ok;
 }
 const binKey = b => { const u = String(b || '').trim().toUpperCase(); return [(!u || u === 'UNLOCATED') ? 1 : 0, u]; };
@@ -1901,48 +1902,72 @@ async function saveG2(txt) {
   try { if (it) await db.doc('settings/' + it.id).update({ bins: txt }); else await db.collection('settings').add({ key: 'gudang2', bins: txt }); } catch (e) { console.error(e); }
 }
 const inG2 = (bin, txt) => { const u = String(bin || '').trim().toUpperCase(); if (!u) return false; return txt.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).some(t => u.startsWith(t)); };
-function pickRows(inf, g2) {
-  return inf.lines.filter(l => l.sisa > 0).map(l => { const p = partMap.get(l.partId) || {}; return { bin: p.location || '', partNo: p.partNo || '', name: p.name || '', qty: Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa, req: l.req || '', g2: inG2(p.location, g2) }; }).sort((a, b) => binCmp(a.bin, b.bin) || a.partNo.localeCompare(b.partNo, 'en', { numeric: true }));
+function pickRows(items, g2) {
+  const mp = new Map();
+  for (const { po, inf } of items) for (const l of inf.lines) {
+    if (!(l.sisa > 0)) continue; const p = partMap.get(l.partId) || {}, q = Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa;
+    let r = mp.get(l.partId); if (!r) { r = { bin: p.location || '', partNo: p.partNo || '', name: p.name || '', qty: 0, req: l.req || '', refs: [], g2: inG2(p.location, g2) }; mp.set(l.partId, r); }
+    r.qty += q; r.refs.push({ poNo: po.poNo, qty: q });
+  }
+  return [...mp.values()].sort((a, b) => binCmp(a.bin, b.bin) || a.partNo.localeCompare(b.partNo, 'en', { numeric: true }));
 }
-function openPicking(po, inf, c) {
-  const ck = 'wms-pick-' + po.id; let done = new Set();
+function pickSelect() {
+  const el0 = S.pos.map(po => ({ po, inf: poInfo(po), c: custMap.get(po.customerId) })).filter(x => x.inf.open && !x.inf.short && !x.po.picked && x.inf.lines.some(l => l.sisa > 0)).sort((a, b) => (a.po.date + a.po.poNo).localeCompare(b.po.date + b.po.poNo));
+  if (!el0.length) { toast('Tidak ada PO lengkap yang belum dipicking.', 'err'); return; }
+  const m = modal(`<h3>Picking Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih PO lengkap yang akan disiapkan sekaligus. Barang digabung dan diurutkan menurut lokasi bin.</p>
+  <label style="display:flex;gap:10px;align-items:center;padding:8px 4px;font-weight:700"><input type="checkbox" id="pall" checked style="width:20px;height:20px"> Pilih semua (${el0.length} PO)</label>
+  <div id="pols">${el0.map((x, i) => `<label style="display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" value="${i}" checked style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b><br><span class="mut" style="font-size:12.5px">${esc(x.c?.name || '')}${x.po.plant ? ' · ' + esc(x.po.plant) : ''}</span></span><span class="mut">${x.inf.lines.filter(l => l.sisa > 0).length} item</span></label>`).join('')}</div>
+  <div class="err" id="perr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="go">Mulai picking</button></div>`);
+  const el = m.el, boxes = () => [...el.querySelectorAll('#pols input')];
+  el.addEventListener('change', e => { if (e.target.id === 'pall') boxes().forEach(b => b.checked = e.target.checked); else $('#pall', el).checked = boxes().every(b => b.checked); });
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go') { const ch = boxes().filter(x => x.checked).map(x => el0[+x.value]); if (!ch.length) { $('#perr', el).textContent = 'Pilih minimal satu PO.'; return; } m.close(); openPicking(ch); }
+  });
+}
+function openPicking(items) {
+  if (items && !Array.isArray(items)) items = [{ po: arguments[0], inf: arguments[1], c: arguments[2] }];
+  const multi = items.length > 1, ids = items.map(x => x.po.id).sort(), ck = 'wms-pick-' + ids.join('+'); let done = new Set();
+  const allPicked = () => items.every(x => x.po.picked);
   try { done = new Set(JSON.parse(localStorage.getItem(ck) || '[]')); } catch (e) { }
   const saveDone = () => { try { localStorage.setItem(ck, JSON.stringify([...done])); } catch (e) { } };
-  const m = modal(`<h3 style="margin-bottom:4px">Picking List</h3>
-  <div class="mut" style="font-size:13px;margin-bottom:8px">PO <b>${esc(po.poNo)}</b> · ${esc(c?.name || '')}${po.plant ? ' · ' + esc(po.plant) : ''}</div>
+  const head = multi ? `<b>${items.length} PO</b> · ${items.map(x => esc(x.po.poNo)).join(', ')}` : `PO <b>${esc(items[0].po.poNo)}</b> · ${esc(items[0].c?.name || '')}${items[0].po.plant ? ' · ' + esc(items[0].po.plant) : ''}`;
+  const m = modal(`<h3 style="margin-bottom:4px">Picking List${multi ? ' Gabungan' : ''}</h3>
+  <div class="mut" style="font-size:13px;margin-bottom:8px">${head}</div>
   <div class="pk-top"><div class="t"><div id="pkc">0 / 0 diambil</div><span id="pkq"></span></div><div class="pk-bar"><i id="pkb" style="width:0"></i></div></div>
   <div id="pv"></div>
   <details style="margin:6px 0 4px"><summary class="mut" style="cursor:pointer;font-size:13px">Atur bin Gudang 2</summary>
     <label class="f" style="margin-top:8px"><span>Awalan bin yang termasuk Gudang 2 (pisahkan koma)</span><input id="g2" placeholder="mis. D, C, H, I, N, M, VALET GG2" value="${esc(getG2())}"></label></details>
-  <div class="pk-act">${canWrite ? (po.picked ? '<button class="btn" data-x="unmark">Batal tandai PO</button>' : '<button class="btn" data-x="mark">✓ Tandai PO sudah dipicking</button>') : ''}<button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
+  <div class="pk-act">${canWrite ? (allPicked() ? `<button class="btn" data-x="unmark">Batal tandai${multi ? ' ' + items.length + ' PO' : ' PO'}</button>` : `<button class="btn" data-x="mark">✓ Tandai ${multi ? items.length + ' PO' : 'PO'} sudah dipicking</button>`) : ''}<button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('pkm');
-  const el = m.el, rowsNow = () => pickRows(inf, $('#g2', el).value), keyOf = r => r.partNo + '|' + r.bin;
+  const el = m.el, rowsNow = () => pickRows(items, $('#g2', el).value), keyOf = r => r.partNo + '|' + r.bin;
   const draw = () => {
     const rows = rowsNow(), n = rows.filter(r => done.has(keyOf(r))).length, q = rows.reduce((s, r) => s + r.qty, 0), qd = rows.filter(r => done.has(keyOf(r))).reduce((s, r) => s + r.qty, 0);
     $('#pkc', el).textContent = `${n} / ${rows.length} diambil`; $('#pkq', el).textContent = `${fmtN(qd)} / ${fmtN(q)} pcs`; $('#pkb', el).style.width = (rows.length ? n / rows.length * 100 : 0) + '%';
-    $('#pv', el).innerHTML = rows.map(r => `<div class="pkr ${r.g2 ? 'g2' : ''} ${done.has(keyOf(r)) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${done.has(keyOf(r)) ? '✓' : ''}</div><div class="mid"><div class="bin">${esc(r.bin || '-')}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}${r.req ? ' · ' + esc(r.req) : ''}</div></div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
+    $('#pv', el).innerHTML = rows.map(r => `<div class="pkr ${r.g2 ? 'g2' : ''} ${done.has(keyOf(r)) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${done.has(keyOf(r)) ? '✓' : ''}</div><div class="mid"><div class="bin">${esc(r.bin || '-')}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}${r.req ? ' · ' + esc(r.req) : ''}</div>${multi ? `<div class="ds" style="font-size:12px;margin-top:3px">${r.refs.map(x => `<span class="chip gray" style="margin:0 4px 2px 0">${esc(x.poNo)} × ${fmtN(x.qty)}</span>`).join('')}</div>` : ''}</div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
   };
   draw(); el.addEventListener('input', e => { if (e.target.id === 'g2') draw(); });
   el.addEventListener('click', e => { const r = e.target.closest('.pkr'); if (!r) return; const k = r.dataset.k; if (done.has(k)) done.delete(k); else done.add(k); saveDone(); draw(); });
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return;
     if (b.dataset.x === 'c') m.close();
-    if (b.dataset.x === 'mark' || b.dataset.x === 'unmark') { if (await setPicked(po, b.dataset.x === 'mark')) document.querySelectorAll('.ov').forEach(o => o.remove()); }
+    if (b.dataset.x === 'mark' || b.dataset.x === 'unmark') { const on = b.dataset.x === 'mark'; let ok = true; for (const x of items) if (ok && !!x.po.picked !== on) ok = await setPicked(x.po, on, true); if (ok) { toast(on ? (multi ? items.length + ' PO ditandai sudah dipicking' : 'PO ditandai sudah dipicking') : 'Tanda picking dihapus'); document.querySelectorAll('.ov').forEach(o => o.remove()); } }
     if (b.dataset.x === 'reset') { done = new Set(); saveDone(); draw(); }
     if (b.dataset.x === 'dl') {
       const g2 = $('#g2', el).value; await saveG2(g2.trim());
-      const rows = pickRows(inf, g2), doc = pdfDoc('PICKING LIST', 'No. PO/QT: ' + pdfSafe(po.poNo)); if (!doc) return;
+      const rows = pickRows(items, g2), doc = pdfDoc('PICKING LIST' + (multi ? ' GABUNGAN' : ''), multi ? items.length + ' PO' : 'No. PO/QT: ' + pdfSafe(items[0].po.poNo)); if (!doc) return;
       doc.setFontSize(9.5).setFont('helvetica', 'normal');
-      doc.text('Customer   : ' + pdfSafe(c?.name || '-'), 14, 42); doc.text('Plant         : ' + pdfSafe(po.plant || '-'), 14, 47); doc.text('Tanggal PO : ' + fmtD(po.date), 14, 52);
-      doc.text('Dicetak     : ' + fmtD(today()), 130, 42); doc.text('Total item  : ' + rows.length + ' baris / ' + fmtN(rows.reduce((s, r) => s + r.qty, 0)) + ' pcs', 130, 47);
+      if (multi) { doc.text('PO: ' + pdfSafe(items.map(x => x.po.poNo).join(', ')).slice(0, 95), 14, 42); doc.text('Dicetak : ' + fmtD(today()), 14, 47); doc.text('Total item : ' + rows.length + ' baris / ' + fmtN(rows.reduce((s, r) => s + r.qty, 0)) + ' pcs', 110, 47); }
+      else { const { po, c } = items[0]; doc.text('Customer   : ' + pdfSafe(c?.name || '-'), 14, 42); doc.text('Plant         : ' + pdfSafe(po.plant || '-'), 14, 47); doc.text('Tanggal PO : ' + fmtD(po.date), 14, 52); doc.text('Dicetak     : ' + fmtD(today()), 130, 42); doc.text('Total item  : ' + rows.length + ' baris / ' + fmtN(rows.reduce((s, r) => s + r.qty, 0)) + ' pcs', 130, 47); }
       doc.setFillColor(255, 224, 178).rect(14, 55, 4, 4, 'F'); doc.setFontSize(8).text('= lokasi bin di Gudang 2', 20, 58.3);
-      const body = rows.map((r, i) => [i + 1, pdfSafe(r.bin || '-'), pdfSafe(r.partNo), pdfSafe(r.name) + (r.req ? ' [' + pdfSafe(r.req) + ']' : ''), fmtN(r.qty), r.g2 ? 'GUDANG 2' : 'Gudang 1', '']);
-      pdfTable(doc, 62, ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty', 'Gudang', 'Cek'], body, {
-        columnStyles: { 0: { cellWidth: 9 }, 1: { cellWidth: 24, fontStyle: 'bold' }, 2: { cellWidth: 32 }, 4: { halign: 'right', cellWidth: 12, fontStyle: 'bold' }, 5: { cellWidth: 20 }, 6: { cellWidth: 12 } },
+      const body = rows.map((r, i) => [i + 1, pdfSafe(r.bin || '-'), pdfSafe(r.partNo), pdfSafe(r.name) + (r.req ? ' [' + pdfSafe(r.req) + ']' : ''), fmtN(r.qty), r.g2 ? 'GUDANG 2' : 'Gudang 1', ...(multi ? [pdfSafe(r.refs.map(x => x.poNo + ' x' + fmtN(x.qty)).join(', '))] : []), '']);
+      const ci = multi ? 7 : 6, head = ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty', 'Gudang', ...(multi ? ['PO'] : []), 'Cek'];
+      pdfTable(doc, 62, head, body, {
+        columnStyles: { 0: { cellWidth: 9 }, 1: { cellWidth: 22, fontStyle: 'bold' }, 2: { cellWidth: 30 }, 4: { halign: 'right', cellWidth: 11, fontStyle: 'bold' }, 5: { cellWidth: 23 }, ...(multi ? { 6: { cellWidth: 30, fontSize: 7 } } : {}), [ci]: { cellWidth: 12 } },
         didParseCell: d => { if (d.section === 'body' && rows[d.row.index]?.g2) { d.cell.styles.fillColor = [255, 224, 178]; if (d.column.index === 5) d.cell.styles.fontStyle = 'bold'; } },
-        didDrawCell: d => { if (d.section === 'body' && d.column.index === 6) { doc.setDrawColor(60).setLineWidth(0.3).rect(d.cell.x + 3, d.cell.y + d.cell.height / 2 - 2, 4, 4); } }
+        didDrawCell: d => { if (d.section === 'body' && d.column.index === ci) { doc.setDrawColor(60).setLineWidth(0.3).rect(d.cell.x + 3, d.cell.y + d.cell.height / 2 - 2, 4, 4); } }
       });
-      saveFile(`Picking-${pdfSafe(po.poNo).replace(/[^\w-]+/g, '_')}.pdf`, doc.output('blob'));
+      saveFile(multi ? `Picking-Gabungan-${today()}.pdf` : `Picking-${pdfSafe(items[0].po.poNo).replace(/[^\w-]+/g, '_')}.pdf`, doc.output('blob'));
     }
   });
 }
