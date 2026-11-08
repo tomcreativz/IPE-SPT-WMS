@@ -165,7 +165,7 @@ const S = { parts: [], movements: [], customers: [], suppliers: [], pos: [], sor
 let closedSet = new Set(), setMissing = false, soMissing = false, tblErr = {}, dataVer = 0, dm = new Map(), incoming = new Map(), soReq = new Map();
 const loaded = {};
 let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
-let canWrite = false, canPO = false, isFull = false, loadFailed = false;
+let canWrite = false, canPO = false, canCust = false, isFull = false, loadFailed = false;
 let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
 const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '' }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
@@ -330,15 +330,17 @@ const ROUTES = [
   ['supplier', 'Database Supplier', viewSuppliers],
   ['pengguna', 'Pengguna & Hak Akses', viewUsers, true],
 ];
+const ROLE_MENUS = { pssr: ['dashboard', 'transaksi', 'cek-stok', 'purchase-order', 'customer'] };
+const menuOk = r => (!r[3] || isFull) && (!ROLE_MENUS[myRole] || ROLE_MENUS[myRole].includes(r[0]));
 let current = null;
 function buildNav() {
-  $('#nav').innerHTML = ROUTES.filter(r => !r[3] || isFull).map(([h, t]) => `<a href="#${h}" data-h="${h}"><i></i>${t}</a>`).join('');
+  $('#nav').innerHTML = ROUTES.filter(menuOk).map(([h, t]) => `<a href="#${h}" data-h="${h}"><i></i>${t}</a>`).join('');
 }
 function route() {
   let h = (location.hash || '#dashboard').slice(1);
   const OLD = { 'barang-masuk': 'in', 'barang-keluar': 'out', 'part-in-out': '' };
   if (h in OLD) { F.all.dir = OLD[h]; h = 'transaksi'; try { history.replaceState(null, '', '#transaksi'); } catch (e) { } }
-  const r = ROUTES.find(x => x[0] === h && (!x[3] || isFull)) || ROUTES[0];
+  const r = ROUTES.find(x => x[0] === h && menuOk(x)) || ROUTES[0];
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.h === r[0]));
   $('#title').textContent = r[1];
   document.title = r[1] + ' — WMS PT Indonesia Prima Equipment Sampit';
@@ -356,7 +358,11 @@ function refresh() {
   if (note) note.hidden = !loadFailed;
   current.fill();
 }
-const ro = (poPage) => (canWrite || (poPage && canPO)) ? '' : (myRole === 'admin'
+const ro = (poPage, custPage) => (canWrite || (poPage && canPO) || (custPage && canCust)) ? '' : (myRole === 'pssr'
+  ? '<div class="banner info">Peran Anda <b>PSSR</b>: Anda dapat <b>mengubah Database Customer</b>, <b>membuat/mengubah PO</b>, <b>mengecek stok</b>, dan <b>melihat Transaksi Part In-Out</b>. Pencatatan barang masuk/keluar dilakukan oleh Staf Gudang.</div>'
+  : myRole === 'manager'
+  ? '<div class="banner info">Peran Anda <b>Branch Manager</b>: Anda dapat <b>melihat seluruh operasional</b> tanpa mengubah data.</div>'
+  : myRole === 'admin'
   ? '<div class="banner info">Peran Anda <b>Admin</b>: Anda dapat <b>membuat PO</b> (menu Purchase Order) dan <b>mengecek stok</b>. Pencatatan barang masuk/keluar dan pengelolaan data dilakukan oleh Staf Gudang.</div>'
   : '<div class="banner info">Akun Anda berhak <b>melihat saja</b>. Untuk mengubah data, minta Staf Gudang mengubah peran Anda di menu Pengguna & Hak Akses.</div>');
 const errDetail = k => { const e = tblErr[k]; return e ? `<div style="margin-top:6px;font-size:12px">Pesan dari Supabase: <code>${esc((e.code ? e.code + ' — ' : '') + (e.message || e))}</code>. Jika tabel sudah dibuat, tunggu semenit lalu tekan Ctrl+F5; bila masih sama, pastikan SQL dijalankan di project Supabase yang sama dengan config.js dan hasilnya “Success”.</div>` : ''; };
@@ -1385,7 +1391,7 @@ function parseCustomerSheet(rows) {
   return { rows: [...out.values()].map(c => ({ ...c, plants: [...c.plants] })), blank, cols: Object.keys(map), headerRow: hi + 1 };
 }
 function importCustomers() {
-  if (!canWrite) return denied();
+  if (!canCust) return denied();
   if (!window.XLSX) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
   const m = modal(`<h3>Impor Customer &amp; Grup</h3>
   <p class="mut" style="margin-top:0">Pilih file <b>Excel (.xlsx) atau CSV</b> berisi daftar customer. Kolom yang dikenali: <b>Nama Customer</b> (wajib), <b>Grup</b>, Plant, PIC, Telepon, Email, Kota, Alamat, Catatan. Nama dicocokkan dengan customer yang sudah ada (tanda baca dan “PT” diabaikan), jadi customer yang sudah ada hanya diperbarui, tidak dobel.</p>
@@ -1676,7 +1682,7 @@ function partyView(kind) {
   const isC = kind === 'customer', fk = isC ? 'cust' : 'supp', coll = isC ? 'customers' : 'suppliers', lab = isC ? 'Customer' : 'Supplier';
   let rows = [];
   return {
-    shell: `${ro()}${loadNoteHTML}<div class="bar"><input type="search" id="q" placeholder="${isC ? 'Cari nama, grup, kota, PIC…' : 'Cari nama, kota, PIC…'}" value="${esc(F[fk].q)}">${isC ? '<select id="grp"></select>' : ''}<span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && isC ? '<button class="btn" data-act="xc">Impor Customer &amp; Grup</button>' : ''}${canWrite ? `<button class="btn primary" data-act="add">+ ${lab}</button>` : ''}</div><div class="tw"><div id="tbl"></div></div>`,
+    shell: `${ro(false, isC)}${loadNoteHTML}<div class="bar"><input type="search" id="q" placeholder="${isC ? 'Cari nama, grup, kota, PIC…' : 'Cari nama, kota, PIC…'}" value="${esc(F[fk].q)}">${isC ? '<select id="grp"></select>' : ''}<span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canCust && isC ? '<button class="btn" data-act="xc">Impor Customer &amp; Grup</button>' : ''}${(isC ? canCust : canWrite) ? `<button class="btn primary" data-act="add">+ ${lab}</button>` : ''}</div><div class="tw"><div id="tbl"></div></div>`,
     input(e) { if (e.target.id === 'q') { F[fk].q = e.target.value; this.fill(); } if (e.target.id === 'grp') { F.cust.grp = e.target.value; this.fill(); } },
     act(a, id) {
       if (a === 'xc') importCustomers();
@@ -1690,14 +1696,14 @@ function partyView(kind) {
       if (isC) { const gs = [...new Set(S.customers.map(c => c.group).filter(Boolean))].sort(byText), sel = $('#grp'); if (sel) { sel.hidden = !gs.length; sel.innerHTML = '<option value="">Semua grup</option><option value="__none">(tanpa grup)</option>' + gs.map(g => `<option ${F.cust.grp === g ? 'selected' : ''}>${esc(g)}</option>`).join(''); sel.value = F.cust.grp; } }
       rows = S[coll].filter(x => (!q || [x.name, x.group, x.plants, x.city, x.pic, x.phone].join(' ').toLowerCase().includes(q)) && (!isC || !F.cust.grp || (F.cust.grp === '__none' ? !x.group : x.group === F.cust.grp))).sort((a, b) => isC ? ((a.group ? 0 : 1) - (b.group ? 0 : 1) || byText(a.group || '', b.group || '') || byText(a.name, b.name)) : byText(a.name, b.name));
       const cnt = x => isC ? S.pos.filter(p => p.customerId === x.id).length : S.movements.filter(m => m.partyId === x.id).length;
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th>${isC ? '<th>Grup</th>' : ''}<th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td>${isC ? `<td>${x.group ? `<span class="chip info">${esc(x.group)}</span>` : '<span class="mut">—</span>'}</td>` : ''}<td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${canWrite ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Nama</th>${isC ? '<th>Grup</th>' : ''}<th>PIC</th><th>Telepon</th><th>Email</th><th>Kota</th><th class="n">${isC ? 'Jumlah PO' : 'Transaksi'}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.address ? `<div class="mut" style="font-size:12px">${esc(x.address)}</div>` : ''}${x.note ? `<div class="mut" style="font-size:12px">${esc(x.note)}</div>` : ''}</td>${isC ? `<td>${x.group ? `<span class="chip info">${esc(x.group)}</span>` : '<span class="mut">—</span>'}</td>` : ''}<td>${esc(x.pic)}</td><td>${esc(x.phone)}</td><td>${esc(x.email)}</td><td>${esc(x.city)}</td><td class="n">${fmtN(cnt(x))}</td><td class="act">${(isC ? canCust : canWrite) ? `<button class="btn sm" data-act="edit" data-id="${x.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${x.id}">Hapus</button>` : ''}</td></tr>`).join('')}</tbody></table>` : empty(S[coll].length ? 'Tidak ada hasil.' : (loaded[coll] ? `Belum ada data ${lab.toLowerCase()}.` : 'Memuat…'));
     }
   };
 }
 function viewCustomers() { return partyView('customer'); }
 function viewSuppliers() { return partyView('supplier'); }
 function partyForm(kind, id) {
-  if (!canWrite) return denied();
+  if (!(kind === 'customer' ? canCust : canWrite)) return denied();
   const isC = kind === 'customer', coll = isC ? 'customers' : 'suppliers', lab = isC ? 'Customer' : 'Supplier';
   const x = id ? (isC ? custMap : suppMap).get(id) : {};
   const m = modal(`<h3>${id ? 'Edit' : 'Tambah'} ${lab}</h3><form class="grid" id="cf">
@@ -1971,7 +1977,7 @@ function viewCek() {
 }
 
 /* ============ pengguna ============ */
-const ROLES = [['staff', 'Staf Gudang (akses penuh)'], ['admin', 'Admin (buat PO & cek stok)'], ['viewer', 'Viewer (lihat saja)'], ['pending', 'Menunggu persetujuan']];
+const ROLES = [['staff', 'Staf Gudang (akses penuh)'], ['admin', 'Admin (buat PO & cek stok)'], ['pssr', 'PSSR (customer, PO, cek stok, lihat transaksi)'], ['manager', 'Branch Manager (lihat seluruh operasional)'], ['viewer', 'Viewer (lihat saja)'], ['pending', 'Menunggu persetujuan']];
 async function loadProfiles() {
   const { data, error } = await sb.from('profiles').select('id,email,full_name,role').order('email');
   if (error) { console.error(error); return; }
@@ -1980,7 +1986,7 @@ async function loadProfiles() {
 }
 function viewUsers() {
   return {
-    shell: `<div class="banner info">Akun baru dibuat di dashboard Supabase (Authentication → Users → Add user). Setelah akun itu pertama kali masuk, atur perannya di sini. Peran: <b>Staf Gudang</b> (akses penuh: input barang masuk/keluar, kelola data, hapus, atur pengguna), <b>Admin</b> (hanya membuat PO dan mengecek stok), <b>Viewer</b> (hanya lihat).</div><div class="tw"><div id="tbl"></div></div>`,
+    shell: `<div class="banner info">Akun baru dibuat di dashboard Supabase (Authentication → Users → Add user). Setelah akun itu pertama kali masuk, atur perannya di sini. Peran: <b>Staf Gudang</b> (akses penuh: input barang masuk/keluar, kelola data, hapus, atur pengguna), <b>Admin</b> (hanya membuat PO dan mengecek stok), <b>PSSR</b> (ubah Database Customer, buat PO, cek stok, lihat Transaksi Part In-Out), <b>Branch Manager</b> (lihat seluruh operasional, tanpa mengubah), <b>Viewer</b> (hanya lihat).</div><div class="tw"><div id="tbl"></div></div>`,
     async input(e) {
       const id = e.target.dataset.uid; if (!id) return;
       if (id === uid) { toast('Anda tidak bisa mengubah peran akun sendiri.', 'err'); this.fill(); return; }
@@ -2070,9 +2076,9 @@ async function start(session) {
   const { data: prof, error } = await sb.from('profiles').select('role,full_name').eq('id', uid).maybeSingle();
   if (error) { console.error(error); }
   myRole = prof ? prof.role : 'pending';
-  if (!['admin', 'staff', 'viewer'].includes(myRole)) return showPending(myEmail);
-  isFull = myRole === 'staff'; canWrite = isFull; canPO = isFull || myRole === 'admin';
-  $('#role').textContent = { staff: 'Staf gudang', admin: 'Admin (PO & cek stok)', viewer: 'Hanya lihat' }[myRole];
+  if (!['admin', 'staff', 'viewer', 'pssr', 'manager'].includes(myRole)) return showPending(myEmail);
+  isFull = myRole === 'staff'; canWrite = isFull; canPO = isFull || myRole === 'admin' || myRole === 'pssr'; canCust = isFull || myRole === 'pssr';
+  $('#role').textContent = { staff: 'Staf gudang', admin: 'Admin (PO & cek stok)', pssr: 'PSSR', manager: 'Branch Manager (lihat saja)', viewer: 'Hanya lihat' }[myRole];
   $('#who').textContent = myEmail; const lo = $('#logout'); lo.hidden = false;
   lo.onclick = async () => { await sb.auth.signOut(); location.reload(); };
   db = makeDb(); buildNav();
