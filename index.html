@@ -410,12 +410,12 @@ function refresh() {
   current.fill();
 }
 const ro = (poPage, custPage) => (canWrite || (poPage && canPO) || (custPage && canCust)) ? '' : (myRole === 'pssr'
-  ? '<div class="banner info">Peran Anda <b>PSSR</b>: Anda dapat <b>mengubah Database Customer</b>, <b>membuat/mengubah PO</b>, <b>mengecek stok</b>, dan <b>melihat Transaksi Part In-Out</b>. Pencatatan barang masuk/keluar dilakukan oleh Staf Gudang.</div>'
+  ? '<div class="banner info">Peran Anda <b>PSSR</b>: Anda dapat <b>mengubah Database Customer</b>, <b>membuat/mengubah PO</b>, <b>mengecek stok</b>, dan <b>melihat Transaksi Part In-Out</b>. Pencatatan barang masuk/keluar dilakukan oleh Warehouseman.</div>'
   : myRole === 'manager'
   ? '<div class="banner info">Peran Anda <b>Branch Manager</b>: Anda dapat <b>melihat seluruh operasional</b> tanpa mengubah data.</div>'
   : myRole === 'admin'
-  ? '<div class="banner info">Peran Anda <b>Admin</b>: Anda dapat <b>membuat PO</b> (menu Purchase Order) dan <b>mengecek stok</b>. Pencatatan barang masuk/keluar dan pengelolaan data dilakukan oleh Staf Gudang.</div>'
-  : '<div class="banner info">Akun Anda berhak <b>melihat saja</b>. Untuk mengubah data, minta Staf Gudang mengubah peran Anda di menu Pengguna & Hak Akses.</div>');
+  ? '<div class="banner info">Peran Anda <b>Admin</b>: Anda dapat <b>membuat PO</b> (menu Purchase Order) dan <b>mengecek stok</b>. Pencatatan barang masuk/keluar dan pengelolaan data dilakukan oleh Warehouseman.</div>'
+  : '<div class="banner info">Akun Anda berhak <b>melihat saja</b>. Untuk mengubah data, minta Warehouseman mengubah peran Anda di menu Pengguna & Hak Akses.</div>');
 const errDetail = k => { const e = tblErr[k]; return e ? `<div style="margin-top:6px;font-size:12px">Pesan dari Supabase: <code>${esc((e.code ? e.code + ' — ' : '') + (e.message || e))}</code>. Jika tabel sudah dibuat, tunggu semenit lalu tekan Ctrl+F5; bila masih sama, pastikan SQL dijalankan di project Supabase yang sama dengan config.js dan hasilnya “Success”.</div>` : ''; };
 const loadNoteHTML = '<div id="loadnote" class="banner warn" hidden>Data belum bisa dijangkau. Periksa koneksi internet; data yang tampil mungkin belum yang terbaru.</div>';
 const empty = (t) => `<div class="empty">${t}</div>`;
@@ -1629,7 +1629,7 @@ async function setClosed(ym, close) {
 function viewClose() {
   return {
     shell: `${setMissing ? `<div class="banner warn">Tabel pengaturan belum terbaca dari database. Jalankan <b>supabase-tambah-tutupbulan.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.${errDetail('settings')}</div>` : ''}${loadNoteHTML}
-    <p class="mut" style="margin-top:0">Bulan yang <b>ditutup</b> tidak bisa lagi ditambah, diubah, atau dihapus transaksinya (dijaga di database). Periksa rekonsiliasi lebih dulu. Hanya Staf Gudang yang dapat menutup atau membuka bulan.</p><div class="tw"><div id="tbl"></div></div>`,
+    <p class="mut" style="margin-top:0">Bulan yang <b>ditutup</b> tidak bisa lagi ditambah, diubah, atau dihapus transaksinya (dijaga di database). Periksa rekonsiliasi lebih dulu. Hanya Warehouseman yang dapat menutup atau membuka bulan.</p><div class="tw"><div id="tbl"></div></div>`,
     act(a, ym) {
       if (a === 'detail') closeDetail(ym);
       if (a === 'close' || a === 'open') {
@@ -1931,7 +1931,7 @@ function viewPO() {
   return {
     shell: `${ro(true)}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
-      <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipicking', 'Stok kurang'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipicking', 'Stok kurang', 'Pengajuan batal'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
       <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="pickall">Picking Gabungan</button>${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) { if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; this.fill(); },
@@ -1945,8 +1945,8 @@ function viewPO() {
     },
     fill() {
       const q = F.po.q.toLowerCase();
-      rows = S.pos.filter(p => { const i = poInfo(p); return (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && i.short === 0 && !p.picked && i.lines.some(l => l.sisa > 0)) : F.po.st === 'Sudah dipicking' ? (i.open && !!p.picked) : i.st.k === F.po.st)); }).sort((a, b) => (b.date + b.poNo).localeCompare(a.date + a.poNo));
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. PO/QT</th><th>Tgl PO</th><th>Customer</th><th>Plant</th><th class="n">Item</th><th>Progres kirim</th><th>Kesiapan stok</th><th class="n">Nilai</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const i = poInfo(p); const pct = i.ord ? Math.round(i.del / i.ord * 100) : 0; return `<tr><td class="mono"><b>${esc(p.poNo)}</b></td><td>${fmtD(p.date)}</td><td>${esc(custMap.get(p.customerId)?.name || '—')}</td><td>${esc(p.plant || '')}</td><td class="n">${(p.items || []).length}</td><td><div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${fmtN(i.del)}/${fmtN(i.ord)} unit</small></td><td>${!i.open ? '<span class="mut">—</span>' : i.short ? `<span class="chip bad">${i.short} baris KURANG</span>` : p.picked ? '<span class="chip info" title="Dipicking oleh ' + esc(p.picked.by || '') + '">SUDAH DIPICKING</span>' : '<span class="chip ok">LENGKAP</span>'}</td><td class="n">${fmtRp(i.val)}</td><td><span class="chip ${i.st.c}">${i.st.k}</span></td><td class="act"><button class="btn sm" data-act="view" data-id="${p.id}">Detail</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.pos.length ? 'Tidak ada PO yang cocok.' : (loaded.pos ? 'Belum ada PO customer. Klik “+ PO Customer”.' : 'Memuat…'));
+      rows = S.pos.filter(p => { const i = poInfo(p); return (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipicking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); }).sort((a, b) => (b.date + b.poNo).localeCompare(a.date + a.poNo));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. PO/QT</th><th>Tgl PO</th><th>Customer</th><th>Plant</th><th class="n">Item</th><th>Progres kirim</th><th>Kesiapan stok</th><th class="n">Nilai</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const i = poInfo(p); const pct = i.ord ? Math.round(i.del / i.ord * 100) : 0; return `<tr><td class="mono"><b>${esc(p.poNo)}</b></td><td>${fmtD(p.date)}</td><td>${esc(custMap.get(p.customerId)?.name || '—')}</td><td>${esc(p.plant || '')}</td><td class="n">${(p.items || []).length}</td><td><div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${fmtN(i.del)}/${fmtN(i.ord)} unit</small></td><td>${!i.open ? '<span class="mut">—</span>' : i.short ? `<span class="chip bad">${i.short} baris KURANG</span>` : p.picked ? '<span class="chip info" title="Dipicking oleh ' + esc(p.picked.by || '') + '">SUDAH DIPICKING</span>' : '<span class="chip ok">LENGKAP</span>'}</td><td class="n">${fmtRp(i.val)}</td><td><span class="chip ${i.st.c}">${i.st.k}</span>${p.cancelReq && p.status !== 'batal' ? ' <span class="chip warn" title="Diajukan oleh ' + esc(p.cancelReq.by || '') + '">MENUNGGU KONFIRMASI BATAL</span>' : ''}</td><td class="act"><button class="btn sm" data-act="view" data-id="${p.id}">Detail</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.pos.length ? 'Tidak ada PO yang cocok.' : (loaded.pos ? 'Belum ada PO customer. Klik “+ PO Customer”.' : 'Memuat…'));
     }
   };
 }
@@ -2058,13 +2058,13 @@ function poDetail(id) {
   const po = poMap.get(id); if (!po) return;
   const inf = poInfo(po), c = custMap.get(po.customerId);
   const dels = S.movements.filter(x => x.dir === 'out' && (x.poRef ? x.poRef.trim().toUpperCase() === po.poNo.trim().toUpperCase() : x.poId === id)).sort((a, b) => a.date.localeCompare(b.date));
-  const m = modal(`<h3>PO ${esc(po.poNo)} <span class="chip ${inf.st.c}">${inf.st.k}</span></h3>
+  const m = modal(`<h3>PO ${esc(po.poNo)} <span class="chip ${inf.st.c}">${inf.st.k}</span>${po.cancelReq && po.status !== 'batal' ? ' <span class="chip warn">MENUNGGU KONFIRMASI BATAL</span>' : ''}</h3>${po.cancelReq && po.status !== 'batal' ? `<div class="banner warn" style="margin:0 0 10px">Pembatalan diajukan oleh <b>${esc(po.cancelReq.by || '-')}</b> pada ${esc(fmtD((po.cancelReq.at || '').slice(0, 10)))}.${po.cancelReq.reason ? ' Alasan: <b>' + esc(po.cancelReq.reason) + '</b>.' : ''} ${canWrite ? 'Warehouseman perlu menyetujui atau menolak.' : 'Menunggu konfirmasi Warehouseman.'}</div>` : ''}
   <dl class="kv"><dt>Customer</dt><dd>${esc(c?.name || '—')}</dd><dt>Plant</dt><dd>${esc(po.plant) || '—'}</dd><dt>Tanggal PO</dt><dd>${fmtD(po.date)}</dd><dt>Catatan</dt><dd>${esc(po.note) || '—'}</dd><dt>Nilai PO</dt><dd>${fmtRp(inf.val)} <span class="mut">(qty × harga master part)</span></dd>${po.picked && inf.open ? `<dt>Picking</dt><dd><span class="chip info">SUDAH DIPICKING</span> <span class="mut">${esc(po.picked.by || '')} · ${fmtD((po.picked.at || '').slice(0, 10))} ${esc((po.picked.at || '').slice(11, 16))}</span></dd>` : ''}</dl>
   <div class="tw"><table class="podt"><thead><tr><th>No</th><th>Part Number</th><th>Deskripsi</th><th>Bin</th><th class="n">Qty</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Free</th><th>KET</th><th>Status</th><th>Delivery</th></tr></thead><tbody>${inf.lines.map((l, i) => { const p = partMap.get(l.partId); return `<tr><td class="mut">${i + 1}</td><td class="mono" style="white-space:nowrap"><b>${p ? esc(p.partNo) : '(dihapus)'}</b></td><td class="dsc">${esc(p?.name || '')}${l.req ? ` <span class="chip gray" style="margin-left:4px">${esc(l.req)}</span>` : ''}</td><td style="white-space:nowrap">${esc(p?.location || '')}</td><td class="n">${fmtN(l.qty)}</td><td class="n">${fmtN(l.d)}</td><td class="n"><b>${fmtN(l.sisa)}</b></td><td class="n">${fmtN(l.stk)}</td><td class="n ${l.free < 0 ? 'out' : ''}">${fmtN(l.free)}</td><td>${l.ket === 'C' ? 'C' : (l.kurang ? '<span class="out">-' + fmtN(l.kurang) + '</span>' : '')}</td><td><span class="chip ${l.st.c}">${l.st.k}</span></td><td><span class="chip ${l.dv === 'DELIVERED' ? 'ok' : l.dv === 'REQ DONE' ? 'info' : 'gray'}">${l.dv}</span></td></tr>`; }).join('')}</tbody></table></div>
   ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td>${esc(x.kind)}</td><td>${esc(x.ekspedisi || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button>${inf.open && !inf.short && inf.lines.some(l => l.sisa > 0) ? '<button class="btn" data-x="pick">Picking List</button>' : ''}${canWrite && inf.open && !inf.short ? (po.picked ? '<button class="btn" data-x="unpicked">Batal tandai dipicking</button>' : '<button class="btn" data-x="picked">✓ Tandai sudah dipicking</button>') : ''}
   ${canWrite && inf.open ? '<button class="btn primary" data-x="send">Buat Barang Keluar</button>' : ''}${canPO ? '<button class="btn" data-x="edit">Edit</button>' : ''}
-  ${canPO && po.status !== 'batal' && inf.st.k !== 'Selesai' ? '<button class="btn" data-x="cancel">Batalkan PO</button>' : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
+  ${canPO && po.status !== 'batal' && inf.st.k !== 'Selesai' ? (canWrite ? (po.cancelReq ? '<button class="btn danger" data-x="cancel">Setujui pembatalan</button><button class="btn" data-x="rejcancel">Tolak pengajuan</button>' : '<button class="btn" data-x="cancel">Batalkan PO</button>') : (po.cancelReq ? '<button class="btn" data-x="rejcancel">Tarik pengajuan batal</button>' : '<button class="btn" data-x="reqcancel">Ajukan pembatalan</button>')) : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
   ${isFull ? '<button class="btn danger" data-x="del">Hapus</button>' : ''}<button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('xw');
   m.el.addEventListener('click', async e => {
@@ -2075,6 +2075,16 @@ function poDetail(id) {
       m.close(); F.all.dir = 'out'; location.hash = '#transaksi'; if (current && current.fill) route();
       setTimeout(() => openTx('out', { kind: 'SOLD CUSTOMER', party: c?.name || '', poRef: po.poNo, note: 'Pengiriman PO ' + po.poNo, lines: inf.lines.filter(l => l.sisa > 0).map(l => ({ partId: l.partId, qty: Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa })) }), 60);
     }
+    if (x === 'reqcancel') {
+      const mm = modal(`<h3>Ajukan pembatalan PO ${esc(po.poNo)}</h3><p>PO tidak langsung dibatalkan. Pengajuan ini harus <b>dikonfirmasi Warehouseman</b>.</p><form id="rq"><div class="grid">${fld('Alasan pembatalan *', 'reason', { type: 'textarea', span: 2, attrs: 'required', ph: 'mis. customer membatalkan pesanan' })}</div><div class="actions"><button type="button" class="btn" data-x="0">Batal</button><button class="btn primary">Kirim pengajuan</button></div></form>`);
+      mm.el.querySelector('[data-x="0"]').onclick = () => mm.close();
+      mm.el.querySelector('#rq').onsubmit = async ev => { ev.preventDefault(); const reason = mm.el.querySelector('[name=reason]').value.trim(); if (!reason) return;
+        if (await guarded(() => db.doc('pos/' + id).update({ cancelReq: { by: ($('#who')?.textContent || myEmail || '').trim(), uid, at: nowISO(), reason } }))) { mm.close(); m.close(); toast('Pengajuan pembatalan dikirim ke Warehouseman'); } };
+      return;
+    }
+    if (x === 'rejcancel') { if (await guarded(() => db.doc('pos/' + id).update({ cancelReq: null }))) { m.close(); toast(canWrite ? 'Pengajuan ditolak, PO tetap aktif' : 'Pengajuan ditarik'); } return; }
+    if (x === 'cancel' && canWrite && po.cancelReq) { if (await guarded(() => db.doc('pos/' + id).update({ status: 'batal', cancelReq: null, cancelOk: { by: ($('#who')?.textContent || myEmail || '').trim(), at: nowISO() } }))) { m.close(); toast('PO dibatalkan'); } return; }
+    if (x === 'cancel' && !canWrite) return denied();
     if (x === 'cancel' || x === 'reopen') { if (await guarded(() => db.doc('pos/' + id).update({ status: x === 'cancel' ? 'batal' : 'aktif' }))) { m.close(); toast(x === 'cancel' ? 'PO dibatalkan' : 'PO diaktifkan'); } }
     if (x === 'del') { if (dels.length) { toast('PO ini sudah punya pengiriman, jadi tidak bisa dihapus. Gunakan “Batalkan PO”.', 'err'); return; } if (await confirmBox('Hapus PO ' + po.poNo + '?')) { if (await guarded(() => db.doc('pos/' + id).delete())) { m.close(); toast('PO dihapus'); } } }
     if (x === 'pick') openPicking([{ po, inf, c }]);
@@ -2474,7 +2484,7 @@ function viewCek() {
 }
 
 /* ============ pengguna ============ */
-const ROLES = [['staff', 'Staf Gudang (akses penuh)'], ['admin', 'Admin (buat PO & cek stok)'], ['pssr', 'PSSR (customer, PO, cek stok, lihat transaksi)'], ['manager', 'Branch Manager (lihat seluruh operasional)'], ['viewer', 'Viewer (lihat saja)'], ['pending', 'Menunggu persetujuan']];
+const ROLES = [['staff', 'Warehouseman (akses penuh)'], ['admin', 'Admin (buat PO & cek stok)'], ['pssr', 'PSSR (customer, PO, cek stok, lihat transaksi)'], ['manager', 'Branch Manager (lihat seluruh operasional)'], ['viewer', 'Viewer (lihat saja)'], ['pending', 'Menunggu persetujuan']];
 async function loadProfiles() {
   const { data, error } = await sb.from('profiles').select('id,email,full_name,role').order('email');
   if (error) { console.error(error); return; }
@@ -2483,7 +2493,7 @@ async function loadProfiles() {
 }
 function viewUsers() {
   return {
-    shell: `<div class="banner info">Akun baru dibuat di dashboard Supabase (Authentication → Users → Add user). Setelah akun itu pertama kali masuk, atur perannya di sini. Peran: <b>Staf Gudang</b> (akses penuh: input barang masuk/keluar, kelola data, hapus, atur pengguna), <b>Admin</b> (hanya membuat PO dan mengecek stok), <b>PSSR</b> (ubah Database Customer, buat PO, cek stok, lihat Transaksi Part In-Out), <b>Branch Manager</b> (lihat seluruh operasional, tanpa mengubah), <b>Viewer</b> (hanya lihat).</div><div class="tw"><div id="tbl"></div></div>`,
+    shell: `<div class="banner info">Akun baru dibuat di dashboard Supabase (Authentication → Users → Add user). Setelah akun itu pertama kali masuk, atur perannya di sini. Peran: <b>Warehouseman</b> (akses penuh: input barang masuk/keluar, kelola data, hapus, atur pengguna), <b>Admin</b> (hanya membuat PO dan mengecek stok), <b>PSSR</b> (ubah Database Customer, buat PO, cek stok, lihat Transaksi Part In-Out), <b>Branch Manager</b> (lihat seluruh operasional, tanpa mengubah), <b>Viewer</b> (hanya lihat).</div><div class="tw"><div id="tbl"></div></div>`,
     async input(e) {
       if (e.target.dataset.nm) {
         if (e.type !== 'change') return;
@@ -2585,7 +2595,7 @@ async function start(session) {
   myRole = prof ? prof.role : 'pending';
   if (!['admin', 'staff', 'viewer', 'pssr', 'manager'].includes(myRole)) return showPending(myEmail);
   isFull = myRole === 'staff'; canWrite = isFull; canPO = isFull || myRole === 'admin' || myRole === 'pssr'; canCust = isFull || myRole === 'pssr';
-  $('#role').textContent = { staff: 'Staf gudang', admin: 'Admin (PO & cek stok)', pssr: 'PSSR', manager: 'Branch Manager (lihat saja)', viewer: 'Hanya lihat' }[myRole];
+  $('#role').textContent = { staff: 'Warehouseman', admin: 'Admin (PO & cek stok)', pssr: 'PSSR', manager: 'Branch Manager (lihat saja)', viewer: 'Hanya lihat' }[myRole];
   $('#who').textContent = myEmail; const lo = $('#logout'); lo.hidden = false;
   lo.onclick = async () => { await sb.auth.signOut(); location.reload(); };
   db = makeDb(); buildNav(); initSidebar();
