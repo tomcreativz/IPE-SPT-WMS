@@ -66,6 +66,14 @@ tr:last-child td{border-bottom:0}
 tbody tr:hover{background:#fcfcfd}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 td.act{white-space:nowrap;text-align:right}
+.kc{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.kc-head{display:flex;border-bottom:3px solid #d9d6cf}.kc-info{flex:1;padding:18px 22px 14px}.kc-info h3{margin:0;font-size:19px;letter-spacing:2px;text-decoration:underline;text-underline-offset:4px;font-family:ui-monospace,Menlo,Consolas,monospace}.kc-info .sub{color:#555;margin:6px 0 12px}
+.kc-info table{width:auto}.kc-info td{padding:2px 14px 2px 0;border:0;font-size:15px;color:#444}.kc-info td.v{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:#111;font-size:15px}
+.kc-logo{width:285px;border-left:2px solid #d9d6cf;display:flex;flex-direction:column;justify-content:center;padding:0 20px}.kc-logo .w{display:flex;align-items:center;gap:6px;font-weight:800;font-size:30px;letter-spacing:.5px;color:#1b2a4a}.kc-logo .w i{width:15px;height:15px;border-radius:50%;background:#111;display:inline-block}.kc-logo .w .y{color:#f5c400}.kc-logo small{font-size:10px;letter-spacing:2px;font-weight:700;color:#1b2a4a;margin-top:6px;max-width:170px}
+.kc-sum{display:flex;gap:14px;padding:18px 20px;background:#f7f5f1;border-bottom:1px solid #e5e2da;flex-wrap:wrap}.kc-sum>div{background:#fff;border:1px solid #dcd8cf;border-radius:8px;padding:10px 24px;text-align:center;min-width:130px}.kc-sum small{display:block;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#6b6b6b;font-weight:700}.kc-sum b{font-size:30px;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700}.kc-sum b.fin{color:#1b2a4a}
+.kc-tw{overflow:auto}table.kt{width:100%;border-collapse:collapse}table.kt th{background:#1b2a4a;color:#fff;font-size:12.5px;letter-spacing:1.5px;padding:15px 20px;position:sticky;top:0;border-right:1px solid #33456f}table.kt td{padding:14px 20px;border-bottom:1px solid #e3e0d8;border-right:1px solid #e3e0d8;font-size:16px}table.kt tbody tr:nth-child(even){background:#f7f5f1}table.kt td.d,table.kt td.rm{font-family:ui-monospace,Menlo,Consolas,monospace;color:#555;font-size:15px}table.kt td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;text-align:center}table.kt th.n{text-align:center}table.kt td.s{color:#1b2a4a}table.kt .z{color:#c9c6bd;font-weight:400}
+@media(max-width:720px){.kc-logo{display:none}.kc-sum>div{flex:1;min-width:90px;padding:8px}.kc-sum b{font-size:22px}table.kt td,table.kt th{padding:10px 10px;font-size:13px}}
+
 table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-overflow:ellipsis}table.pt td.nw,table.pt th{white-space:nowrap}table.pt td.nm{white-space:normal;line-height:1.35}
 .mut{color:var(--mut)}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
@@ -392,7 +400,7 @@ function viewDashboard() {
   return {
     shell: `${ro()}${loadNoteHTML}<div class="bar"><label class="mut">Tahun <select id="yr"></select></label></div><div id="dash"></div>`,
     input(e) { if (e.target.id === 'yr') { F.dash.year = +e.target.value; this.fill(); } },
-    act(a) { if (a === 'sample') loadSample(); if (a === 'wipe') wipeAll(); },
+    act(a) { if (a === 'sample') loadSample(); if (a === 'wipe') wipeAll(); if (a === 'bkj') backupJSON(); if (a === 'bkx') backupXLSX(); if (a === 'restore') restoreBackup(); },
     fill() {
       const box = $('#dash'), parts = S.parts, yr = F.dash.year;
       const years = [...new Set([new Date().getFullYear(), ...S.movements.map(m => +(m.date || '').slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
@@ -415,7 +423,7 @@ function viewDashboard() {
       const recent = S.movements.slice().sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1)).slice(0, 8);
       const emptyDb = !parts.length && loaded.parts;
       box.innerHTML = `
-      ${emptyDb ? `<div class="card" style="margin-bottom:16px"><h2>Selamat datang di WMS Gudang Sampit</h2><p class="mut" style="margin:0 0 12px">Database masih kosong. Mulai dengan menambah spare part satu per satu atau impor dari CSV di menu <b>Database Spare Part</b>. Anda juga bisa memuat data contoh untuk mencoba semua fitur.</p><div class="bar" style="margin:0"><a class="btn primary" href="#spare-part">Buka Database Spare Part</a>${canWrite ? '<button class="btn" data-act="sample">Muat data contoh</button>' : ''}</div></div>` : ''}
+      ${emptyDb ? `<div class="card" style="margin-bottom:16px"><h2>Selamat datang di WMS Gudang Sampit</h2><p class="mut" style="margin:0 0 12px">Database masih kosong. Mulai dengan menambah spare part satu per satu atau impor dari CSV di menu <b>Database Spare Part</b>. Anda juga bisa memuat data contoh untuk mencoba semua fitur.</p><div class="bar" style="margin:0"><a class="btn primary" href="#spare-part">Buka Database Spare Part</a>${canWrite ? '<button class="btn" data-act="sample">Muat data contoh</button>' : ''}${isFull ? '<button class="btn" data-act="restore">Pulihkan dari backup</button>' : ''}</div></div>` : ''}
       <div class="cards">
         <div class="card stat hl"><small>Total revenue ${yr}</small><b style="font-size:20px">${fmtRp(rev)}</b></div>
         <div class="card stat"><small>Total stock value</small><b style="font-size:20px">${fmtRp(totVal)}</b></div>
@@ -443,7 +451,7 @@ function viewDashboard() {
         <div class="card"><h2>Perlu di-order (analisis urgensi)</h2>${urgent.length ? `<div class="tw" style="border:0;max-height:360px"><table><thead><tr><th>Part number</th><th>Detail</th><th class="n">Avail</th><th class="n">Saran</th><th>Urgensi</th></tr></thead><tbody>${urgent.slice(0, 12).map(a => `<tr><td class="mono"><b>${esc(a.p.partNo)}</b></td><td>${esc(a.p.name)}</td><td class="n">${fmtN(a.avail)}</td><td class="n"><b>${fmtN(a.sug)}</b></td><td><span class="chip ${urgChip(a.urg)}">${a.urg}</span></td></tr>`).join('')}</tbody></table></div><p style="margin:10px 0 0"><a class="btn sm" href="#laporan-reorder">Lihat laporan re-order lengkap</a></p>` : empty('Tidak ada part yang mendesak untuk di-order.')}</div>
         <div class="card"><h2>Transaksi terbaru</h2>${recent.length ? `<div class="tw" style="border:0"><table><thead><tr><th>Tanggal</th><th>Dokumen</th><th>Form/To</th><th>Part</th><th class="n">Qty</th></tr></thead><tbody>${recent.map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono">${esc(m.docNo)}</td><td>${esc(m.kind)}</td><td>${p ? esc(p.partNo) : '<span class="mut">(dihapus)</span>'}</td><td class="n ${m.dir}">${m.dir === 'in' ? '+' : '−'}${fmtN(m.qty)}</td></tr>`; }).join('')}</tbody></table></div>` : empty('Belum ada transaksi.')}</div>
       </div>
-      ${isFull && (parts.length || S.movements.length) ? `<p style="margin-top:22px"><button class="btn sm" data-act="wipe">Hapus semua data</button></p>` : ''}`;
+      ${parts.length || S.movements.length ? `<div class="card" style="margin-top:22px"><h2>Backup data</h2><p class="mut" style="margin:0 0 10px;font-size:13px">Unduh cadangan secara berkala (misalnya setiap akhir bulan) dan simpan di komputer atau Google Drive. File <b>JSON</b> dipakai untuk memulihkan data; file <b>Excel</b> untuk dibaca.</p><div class="bar" style="margin:0"><button class="btn primary" data-act="bkj">Backup lengkap (JSON)</button><button class="btn" data-act="bkx">Backup Excel</button><span class="grow"></span>${isFull ? '<button class="btn sm" data-act="wipe">Hapus semua data</button>' : ''}</div></div>` : ''}`;
     }
   };
 }
@@ -949,6 +957,10 @@ function kindOfRow(dir, ket, ft) {
   return 'SOLD CUSTOMER';
 }
 const isInternalParty = k => /^(IPE|IPT)\s/i.test(k) || /^(WH0|FUCHS|PART RET|SMD$)/i.test(k);
+function kMonths(K) {
+  const months = new Map(); for (const t of K.trx) { const ym = t.date.slice(0, 7); const m = months.get(ym) || { i: 0, o: 0, n: 0 }; if (t.dir === 'in') m.i += t.qty; else m.o += t.qty; m.n++; months.set(ym, m); }
+  let run = K.awalTotal; return [...months.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([ym, m]) => { run += m.i - m.o; return { ym, ...m, akhir: run }; });
+}
 function parseKartu(X, wb) {
   const dbr = sheetRows(X, wb, 'DATABASE'), dir_ = sheetRows(X, wb, 'DATA INPUT');
   if (!dbr || !dir_) throw new Error('Sheet "DATABASE" atau "DATA INPUT" tidak ditemukan. Pastikan ini file KARTU STOK IPE SPT.');
@@ -973,6 +985,19 @@ function parseKartu(X, wb) {
   const canon = new Map(), merged = [];
   for (const [n, m] of freq) { const v = [...m.entries()].sort((a, b) => b[1] - a[1]); canon.set(n, v[0][0]); if (v.length > 1) merged.push(v.map(x => x[0])); }
   const trx = raw.map(x => { const k = kindOfRow(x.dir, x.ket, x.ft); const up = x.ket.toUpperCase(); const party = isInternalParty(up) ? (up === 'IPT PTK' ? 'IPE PTK' : x.ket) : (canon.get(normName(x.ket)) || x.ket); return { ...x, kind: k, party }; });
+  // koreksi tanggal salah bulan: baris yang tanggalnya jauh lebih lama dari baris-baris sebelumnya (urutan input)
+  const ymd = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 864e5; };
+  const shift = (s, k) => { const [y, m, d] = s.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 + k, 1)); const dim = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(Math.min(d, dim)).padStart(2, '0')}`; };
+  let runMax = 0; const fixes = [];
+  for (const t of trx) {
+    t.d0 = t.date; t.dfix = t.date; const v = ymd(t.date);
+    if (runMax && runMax - v > 30) {
+      for (let k = 1; k <= 11; k++) { const c = shift(t.date, k), cv = ymd(c); if (cv >= runMax - 7 && cv <= runMax + 45) { t.dfix = c; fixes.push({ partNo: t.partNo, from: t.date, to: c, docNo: t.docNo }); break; } }
+    }
+    runMax = Math.max(runMax, ymd(t.dfix));
+  }
+  const fixGroups = new Map(); for (const f of fixes) { const k = f.from.slice(0, 7) + '>' + f.to.slice(0, 7); const g = fixGroups.get(k) || { from: f.from.slice(0, 7), to: f.to.slice(0, 7), n: 0, d1: 99, d2: 0, docs: [] }; g.n++; g.d1 = Math.min(g.d1, +f.from.slice(8)); g.d2 = Math.max(g.d2, +f.from.slice(8)); if (f.docNo) g.docs.push(f.docNo); fixGroups.set(k, g); }
+  for (const t of trx) t.date = t.dfix;
   const kinds = {}; for (const t of trx) { const key = t.dir.toUpperCase() + ' · ' + t.kind; kinds[key] = (kinds[key] || 0) + 1; }
   const calc = new Map(); for (const t of trx) { const c = calc.get(t.partNo) || { i: 0, o: 0 }; if (t.dir === 'in') c.i += t.qty; else c.o += t.qty; calc.set(t.partNo, c); }
   const mism = []; for (const p of parts.values()) { const c = calc.get(p.partNo) || { i: 0, o: 0 }; if (c.i !== p.tin || c.o !== p.tout || p.awal + c.i - c.o !== p.akhir) mism.push({ partNo: p.partNo, xl: p.akhir, web: p.awal + c.i - c.o }); }
@@ -980,7 +1005,7 @@ function parseKartu(X, wb) {
   for (const t of trx) { const ym = t.date.slice(0, 7); const m = months.get(ym) || { i: 0, o: 0, n: 0 }; if (t.dir === 'in') m.i += t.qty; else m.o += t.qty; m.n++; months.set(ym, m); }
   let run = awalTotal; const mrows = [...months.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([ym, m]) => { run += m.i - m.o; return { ym, ...m, akhir: run }; });
   const custNames = [...new Set(trx.filter(t => t.dir === 'out' && ['SOLD CUSTOMER', 'BUNDLING', 'WH03 SERVICE'].includes(t.kind) && !isInternalParty(t.party.toUpperCase())).map(t => t.party))].sort(byText);
-  return { parts: [...parts.values()], trx, unknown, skipEmpty, skipBadDate, both, merged, kinds, mism, awalTotal, mrows, custNames, awalLabel: am ? `${am[1]} ${am[2]}` : '', awalDate: am ? `${am[2]}-${String(BLN_ID.indexOf(am[1]) + 1).padStart(2, '0')}-01` : '', sohBlank: blankPn };
+  return { fixes, fixGroups: [...fixGroups.values()], parts: [...parts.values()], trx, unknown, skipEmpty, skipBadDate, both, merged, kinds, mism, awalTotal, mrows, custNames, awalLabel: am ? `${am[1]} ${am[2]}` : '', awalDate: am ? `${am[2]}-${String(BLN_ID.indexOf(am[1]) + 1).padStart(2, '0')}-01` : '', sohBlank: blankPn };
 }
 async function runKartu(K, soh, o, prog) {
   const t = nowISO(), imp = 'kartu-stok', sm = new Map((soh?.parts || []).map(p => [p.partNo, p]));
@@ -993,9 +1018,9 @@ async function runKartu(K, soh, o, prog) {
   const needC = o.customers ? K.custNames.filter(n => !cust.has(normName(n))) : [];
   if (needC.length) { prog(`Mengimpor ${fmtN(needC.length)} customer…`); for (const r of await db.collection('customers').addMany(needC.map(n => ({ name: n, pic: '', phone: '', email: '', city: '', address: '', note: '', plants: '', createdAt: t, createdBy: uid, imp })))) cust.set(normName(r.data.name), r.id); res.customers = needC.length; }
   const mv = [], d0 = K.awalDate || (K.trx[0]?.date.slice(0, 7) + '-01');
-  for (const p of K.parts) if (p.awal > 0) mv.push(mvDoc({ docNo: 'SALDO AWAL ' + (K.awalLabel || d0.slice(0, 7)), date: d0, partId: pid.get(p.partNo), qty: p.awal, dir: 'in', kind: 'SALDO AWAL', note: 'Saldo awal (impor Kartu Stok)', imp }));
+  for (const p of K.parts) if (p.awal > 0) mv.push(mvDoc({ docNo: 'SALDO AWAL ' + (K.awalLabel || d0.slice(0, 7)), date: d0, partId: pid.get(p.partNo), qty: p.awal, dir: 'in', kind: 'SALDO AWAL', note: 'Saldo awal (impor Kartu Stok)', imp, seq: 0 }));
   res.opening = mv.length;
-  for (const x of K.trx) mv.push(mvDoc({ docNo: x.docNo, date: x.date, partId: pid.get(x.partNo), qty: x.qty, dir: x.dir, kind: x.kind, party: x.party, partyId: cust.get(normName(x.party)) || '', poRef: x.poRef, ekspedisi: x.ekspedisi, awb: x.awb, note: x.note, imp }));
+  K.trx.forEach((x, i) => mv.push(mvDoc({ docNo: x.docNo, date: x.date, partId: pid.get(x.partNo), qty: x.qty, dir: x.dir, kind: x.kind, party: x.party, partyId: cust.get(normName(x.party)) || '', poRef: x.poRef, ekspedisi: x.ekspedisi, awb: x.awb, note: (x.note ? x.note + ' | ' : '') + (x.date !== x.d0 ? `Tanggal di Excel ${x.d0}, dikoreksi` : '') || '', imp, seq: i + 1 })));
   res.trx = K.trx.length;
   prog(`Mengimpor ${fmtN(mv.length)} baris stok/transaksi (bertahap)…`);
   await db.collection('movements').addMany(mv);
@@ -1018,6 +1043,7 @@ function importKartu() {
   <div id="kprev" style="margin-top:12px"></div>
   <div id="kopts" hidden>
     <label style="display:block;margin:10px 0 4px"><input type="checkbox" id="kc" checked> Buat daftar customer dari data transaksi</label>
+ <label style="display:block;margin:4px 0" id="kfixrow" hidden><input type="checkbox" id="kfix" checked> <span id="kfixtxt"></span></label>
     <label style="display:block;margin:4px 0"><input type="checkbox" id="kx" ${setMissing ? 'disabled' : 'checked'}> Tutup otomatis semua bulan yang sudah lewat (bulan berjalan tetap terbuka) ${setMissing ? '<span class="mut">(tabel pengaturan belum ada)</span>' : ''}</label>
   </div><div class="err" id="kerr"></div><div id="kprog" class="mut"></div>
   <div class="actions"><button class="btn" data-x="c">Tutup</button><button class="btn primary" data-x="go" disabled>Impor</button></div>`, { wide: true });
@@ -1025,6 +1051,9 @@ function importKartu() {
   const read = async f => window.XLSX.read(await f.arrayBuffer(), { type: 'array' });
   const render = () => {
     const pv = $('#kprev', m.el); if (!K) { pv.textContent = ''; return; }
+    const fixOn = $('#kfix', m.el).checked; for (const t of K.trx) t.date = fixOn ? t.dfix : t.d0; K.mrows = kMonths(K);
+    $('#kfixrow', m.el).hidden = !K.fixes.length; $('#kfixtxt', m.el).textContent = `Perbaiki otomatis ${K.fixes.length} tanggal yang tampaknya salah bulan`;
+    const fixInfo = K.fixes.length ? `<div style="margin:8px 0 0;padding:8px 10px;border-radius:8px;background:${fixOn ? '#ecfdf5' : '#fff7ed'};font-size:12.5px"><b>${fixOn ? 'Diperbaiki' : 'Tidak diperbaiki'}:</b> ${K.fixGroups.map(g => `${fmtN(g.n)} baris bertanggal ${g.d1 === g.d2 ? g.d1 : g.d1 + '–' + g.d2} ${esc(BLN_ID[+g.from.slice(5) - 1])} ${g.from.slice(0, 4)} ${fixOn ? '→ ' + esc(BLN_ID[+g.to.slice(5) - 1]) + ' ' + g.to.slice(0, 4) : ''}`).join('; ')}. Baris itu diinput di antara transaksi bulan ${K.fixGroups[0] ? esc(BLN_ID[+K.fixGroups[0].to.slice(5) - 1]) : ''}, dengan nomor dokumen yang melanjutkan bulan tersebut. Tanggal asli Excel dicatat di kolom catatan.</div>` : '';
     const exist = new Set(S.parts.map(p => p.partNo.toUpperCase())), nNew = K.parts.filter(p => !exist.has(p.partNo)).length;
     const kc = Object.entries(K.kinds).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)}: ${fmtN(v)}`).join(' &nbsp;·&nbsp; ');
     pv.innerHTML = `<div class="card" style="padding:12px;background:#fafafa"><ul style="margin:0;padding-left:18px;line-height:1.7">
@@ -1033,6 +1062,7 @@ function importKartu() {
     <li>Customer terdeteksi: <b>${fmtN(K.custNames.length)}</b>${K.merged.length ? ` (${K.merged.length} nama ditulis berbeda-beda dan disatukan, mis. “${esc(K.merged[0][0])}” = “${esc(K.merged[0][1])}”)` : ''}</li>
     <li>Jenis transaksi: ${kc}</li>
     ${SO ? `<li>Harga/model dari file SOH: <b>${fmtN(SO.parts.filter(p => p.price > 0).length)}</b> part berharga</li>` : '<li class="mut">File SOH belum dipilih: harga dan model spare part akan kosong (bisa diimpor belakangan).</li>'}</ul>
+    ${fixInfo}
     ${K.unknown.size ? `<p class="out" style="margin:8px 0 0;font-size:12.5px">${fmtN([...K.unknown.values()].reduce((a, b) => a + b, 0))} baris dilewati karena part tidak ada di sheet DATABASE: ${[...K.unknown.keys()].slice(0, 5).map(esc).join(', ')}</p>` : ''}
     ${(K.skipBadDate || K.both || K.skipEmpty) ? `<p class="out" style="margin:8px 0 0;font-size:12.5px">Dilewati: ${fmtN(K.skipBadDate)} tanpa tanggal valid, ${fmtN(K.both)} berisi IN dan OUT sekaligus, ${fmtN(K.skipEmpty)} tanpa jumlah.</p>` : ''}
     ${K.mism.length ? `<p class="out" style="margin:8px 0 0;font-size:12.5px"><b>${fmtN(K.mism.length)} part</b> total IN/OUT/stok akhirnya tidak sama dengan sheet DATABASE (mis. ${K.mism.slice(0, 3).map(x => `${esc(x.partNo)}: Excel ${x.xl}, web ${x.web}`).join('; ')}).</p>` : '<p class="in" style="margin:8px 0 0;font-size:12.5px">Total IN, OUT, dan stok akhir semua part cocok dengan sheet DATABASE.</p>'}
@@ -1045,6 +1075,7 @@ function importKartu() {
     try { const wb = await read(f); if (which === 'k') K = parseKartu(window.XLSX, wb); else SO = parseSOH(window.XLSX, wb); render(); }
     catch (e) { console.error(e); if (which === 'k') K = null; else SO = null; $('#kprev', m.el).textContent = ''; er.textContent = 'Gagal membaca file: ' + (e.message || e); if (K) render(); }
   };
+  m.el.addEventListener('change', e => { if (e.target.id === 'kfix' && K) render(); });
   $('#kf', m.el).addEventListener('change', e => onFile('k', e)); $('#sf', m.el).addEventListener('change', e => onFile('s', e));
   m.el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b || busy) return;
@@ -1269,6 +1300,63 @@ function importSOFromSOH() {
   });
 }
 
+/* ============ BACKUP & PULIHKAN ============ */
+const BK_KEYS = ['parts', 'movements', 'customers', 'suppliers', 'pos', 'sorders', 'settings'];
+function backupJSON() {
+  const data = {}; for (const k of BK_KEYS) data[k] = S[k].map(x => ({ ...x }));
+  const blob = new Blob([JSON.stringify({ app: 'wms-sampit', version: 1, at: nowISO(), by: myEmail, counts: Object.fromEntries(BK_KEYS.map(k => [k, S[k].length])), data })], { type: 'application/json' });
+  saveFile(`WMS-backup-${today()}.json`, blob);
+}
+function backupXLSX() {
+  const X = window.XLSX; if (!X) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const wb = X.utils.book_new(), add = (name, aoa, w) => { const ws = X.utils.aoa_to_sheet(aoa); if (w) ws['!cols'] = w.map(c => ({ wch: c })); X.utils.book_append_sheet(wb, ws, name); };
+  const pn = id => partMap.get(id)?.partNo || '', nm = id => partMap.get(id)?.name || '';
+  add('SPARE PART', [['PART NUMBER', 'SUPERSESSION', 'DESCRIPTION', 'BIN', 'MODEL', 'SATUAN', 'SUPPLIER', 'HARGA', 'STOK MIN', 'SHIP', 'SS', 'FREQ', 'STOK SAAT INI'], ...S.parts.map(p => [p.partNo, p.supersession || '', p.name, p.location || '', p.model || '', p.unit || '', suppMap.get(p.supplierId)?.name || '', p.price || 0, p.minStock || 0, p.ship ?? 1, p.ss ?? 1, p.freq ?? 1, stock(p.id)])], [18, 16, 36, 10, 14, 8, 20, 12, 9, 6, 6, 6, 12]);
+  add('TRANSAKSI', [['TGL', 'PART NUMBER', 'DESCRIPTION', 'ARAH', 'QTY', 'FORM/TO', 'FORM/CUSTOMER', 'BPB/GR/GI', 'PO CUST/REQ', 'EKSPEDISI', 'AWB/RESI', 'REMARK', 'DICATAT OLEH'], ...S.movements.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.seq ?? 1e9) - (b.seq ?? 1e9))).map(m => [m.date, pn(m.partId), nm(m.partId), m.dir === 'in' ? 'IN' : 'OUT', m.qty, m.kind, partyName(m), m.docNo || '', poText(m), m.ekspedisi || '', m.awb || '', m.note || '', names[m.by] || ''])], [11, 18, 34, 6, 7, 16, 28, 18, 20, 14, 16, 26, 20]);
+  add('CUSTOMER', [['NAMA', 'PLANT', 'PIC', 'TELEPON', 'EMAIL', 'KOTA', 'ALAMAT', 'CATATAN'], ...S.customers.map(c => [c.name, c.plants || '', c.pic || '', c.phone || '', c.email || '', c.city || '', c.address || '', c.note || ''])], [32, 24, 16, 14, 22, 14, 30, 24]);
+  add('SUPPLIER', [['NAMA', 'PIC', 'TELEPON', 'EMAIL', 'KOTA', 'ALAMAT', 'CATATAN'], ...S.suppliers.map(c => [c.name, c.pic || '', c.phone || '', c.email || '', c.city || '', c.address || '', c.note || ''])], [28, 16, 14, 22, 14, 30, 24]);
+  const po = []; for (const o of S.pos) for (const it of o.items || []) po.push([o.date, o.poNo, o.plant || '', custMap.get(o.customerId)?.name || '', pn(it.partId), nm(it.partId), it.qty, it.ket || '', it.req || '', o.status === 'batal' ? 'BATAL' : 'AKTIF']);
+  add('PO CUSTOMER', [['TGL PO', 'NOMOR PO/QT', 'PLANT', 'CUSTOMER', 'PART NUMBER', 'DESCRIPTION', 'QTY', 'KET', 'REQ', 'STATUS'], ...po], [11, 20, 16, 30, 18, 34, 7, 6, 22, 9]);
+  add('STOCK ORDER', [['TGL', 'PART NUMBER', 'DESCRIPTION', 'PERIODE SO', 'REQ SO', 'DONE'], ...S.sorders.map(l => [l.date, pn(l.partId), nm(l.partId), l.period, l.req, l.done ? 'C' : ''])], [11, 18, 34, 18, 8, 6]);
+  add('BULAN DITUTUP', [['BULAN'], ...[...closedSet].sort().map(x => [x])]);
+  const buf = X.write(wb, { bookType: 'xlsx', type: 'array' });
+  saveFile(`WMS-backup-${today()}.xlsx`, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+}
+function restoreBackup() {
+  if (!isFull) return denied();
+  if (S.parts.length || S.movements.length) { toast('Pemulihan hanya untuk database yang masih kosong.', 'err'); return; }
+  const m = modal(`<h3>Pulihkan dari file backup</h3><p class="mut" style="margin-top:0">Pilih file <b>WMS-backup-….json</b> (bukan yang Excel). Seluruh data dikembalikan seperti saat backup dibuat. Hanya bisa dipakai pada database yang masih kosong.</p>
+  <input type="file" id="rf" accept=".json,application/json"><div id="rprev" style="margin-top:12px"></div><div class="err" id="rerr"></div><div id="rprog" class="mut"></div>
+  <div class="actions"><button class="btn" data-x="c">Tutup</button><button class="btn primary" data-x="go" disabled>Pulihkan</button></div>`);
+  let B = null, busy = false;
+  $('#rf', m.el).addEventListener('change', async ev => {
+    const f = ev.target.files[0]; if (!f) return; const er = $('#rerr', m.el); er.textContent = ''; B = null; $('[data-x=go]', m.el).disabled = true;
+    try {
+      const j = JSON.parse(await f.text()); if (j.app !== 'wms-sampit' || !j.data) throw new Error('Ini bukan file backup WMS.'); for (const k of BK_KEYS) if (j.data[k] && !Array.isArray(j.data[k])) throw new Error('Isi file rusak.');
+      B = j; $('#rprev', m.el).innerHTML = `<div class="card" style="padding:12px;background:#fafafa">Backup tanggal <b>${esc(fmtD((j.at || '').slice(0, 10)))}</b> oleh ${esc(j.by || '-')}<ul style="margin:8px 0 0;padding-left:18px;line-height:1.7">${BK_KEYS.map(k => `<li>${{ parts: 'Spare part', movements: 'Transaksi', customers: 'Customer', suppliers: 'Supplier', pos: 'PO Customer', sorders: 'Stock Order', settings: 'Pengaturan (bulan ditutup)' }[k]}: <b>${fmtN((j.data[k] || []).length)}</b></li>`).join('')}</ul></div>`;
+      $('[data-x=go]', m.el).disabled = false;
+    } catch (e) { $('#rprev', m.el).textContent = ''; er.textContent = 'Gagal membaca file: ' + (e.message || e); }
+  });
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b || busy) return;
+    if (b.dataset.x === 'c') m.close();
+    if (b.dataset.x === 'go' && B) {
+      busy = true; b.disabled = true; const pg = $('#rprog', m.el), D = B.data, strip = ({ id, ...rest }) => rest;
+      try {
+        const map = new Map(), put = async (k, arr, tf) => { if (!arr || !arr.length) return; pg.textContent = `Memulihkan ${k}… (${fmtN(arr.length)})`; const rows = await db.collection(k).addMany(arr.map(x => tf(strip(x)))); rows.forEach((r, i) => map.set(arr[i].id, r.id)); };
+        const mp = id => (id && map.has(id) ? map.get(id) : '');
+        await put('suppliers', D.suppliers, x => x); await put('customers', D.customers, x => x);
+        await put('parts', D.parts, x => ({ ...x, supplierId: mp(x.supplierId) }));
+        await put('pos', D.pos, x => ({ ...x, customerId: mp(x.customerId), items: (x.items || []).map(i => ({ ...i, partId: mp(i.partId) })) }));
+        await put('movements', D.movements, x => ({ ...x, partId: mp(x.partId), partyId: mp(x.partyId), poId: mp(x.poId) }));
+        await put('sorders', soMissing ? [] : D.sorders, x => ({ ...x, partId: mp(x.partId) }));
+        if (!setMissing && D.settings && D.settings.length) await put('settings', D.settings, x => x);
+        toast('Data berhasil dipulihkan'); m.close();
+      } catch (err) { console.error(err); $('#rerr', m.el).textContent = 'Pemulihan berhenti: ' + (err.message || err.code || err) + '. Data yang sudah masuk tetap tersimpan; gunakan “Hapus semua data” lalu ulangi.'; busy = false; }
+    }
+  });
+}
+
 /* ============ TUTUP BULAN ============ */
 function monthStats(ym) {
   const R = computeSOH(ym), start = ym + '-01', end = ym + '-31';
@@ -1384,9 +1472,24 @@ function viewSOH() {
 
 /* ============ KARTU STOK ============ */
 function ledgerFor(partId) {
-  const rows = S.movements.filter(m => m.partId === partId).sort((a, b) => (a.date + (a.at || '')).localeCompare(b.date + (b.at || '')));
+  const rows = S.movements.filter(m => m.partId === partId).sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.seq ?? 1e9) - (b.seq ?? 1e9)) || (a.at || '').localeCompare(b.at || ''));
   let bal = 0; return rows.map(m => { const i = m.dir === 'in' ? m.qty : 0, o = m.dir === 'out' ? m.qty : 0; bal += i - o; return { ...m, i, o, bal }; });
 }
+function kartuRows(cur) {
+  const out = []; let first = true;
+  if (F.kartu.from) out.push({ date: F.kartu.from, ket: 'STOCK AWAL', remark: '', i: 0, o: 0, bal: cur.open, open: true });
+  for (const r of cur.rows) {
+    if (isOpening(r) && !F.kartu.from) { out.push({ date: r.date, ket: 'STOCK AWAL', remark: '', i: 0, o: 0, bal: r.bal, open: true }); continue; }
+    out.push({ date: r.date, ket: partyName(r) || r.kind, remark: r.docNo || '', i: r.i, o: r.o, bal: r.bal });
+  }
+  return out;
+}
+function kartuSummary(cur, rows) {
+  const awal = F.kartu.from ? cur.open : cur.rows.filter(isOpening).reduce((s, r) => s + (r.dir === 'in' ? r.qty : -r.qty), 0);
+  const tin = rows.reduce((s, r) => s + r.i, 0), tout = rows.reduce((s, r) => s + r.o, 0);
+  return { awal, tin, tout, akhir: awal + tin - tout };
+}
+const KC_LOGO = '<div class="kc-logo"><div class="w"><span>MITRA</span><i></i><span class="y">IPE</span></div><small>PT. INDONESIA PRIMA EQUIPMENT</small></div>';
 function viewKartu() {
   let cur = null;
   const get = () => {
@@ -1395,7 +1498,7 @@ function viewKartu() {
     const before = from ? all.filter(r => r.date < from) : [];
     const open = before.length ? before[before.length - 1].bal : 0;
     const rows = all.filter(r => (!from || r.date >= from) && (!to || r.date <= to));
-    return { p, open, rows, tin: rows.reduce((s, r) => s + r.i, 0), tout: rows.reduce((s, r) => s + r.o, 0) };
+    return { p, open, rows };
   };
   return {
     shell: `${loadNoteHTML}
@@ -1413,33 +1516,69 @@ function viewKartu() {
     },
     act(a) {
       if (!cur) { toast('Pilih spare part terlebih dahulu.', 'err'); return; }
-      const rowsOut = [['Tanggal', 'No. Dokumen', 'Keterangan', 'Masuk', 'Keluar', 'Saldo']];
-      const desc = r => [r.kind, partyName(r), poText(r) ? 'PO ' + poText(r) : '', r.ekspedisi, r.awb, r.note].filter(Boolean).join(' · ');
-      if (a === 'csv') exportCSV('kartu-stok-' + cur.p.partNo, [['Kartu Stok', cur.p.partNo, cur.p.name], ...rowsOut, ...(F.kartu.from ? [['', '', 'Saldo awal periode', '', '', cur.open]] : []), ...cur.rows.map(r => [fmtD(r.date), r.docNo, desc(r), r.i || '', r.o || '', r.bal])]);
-      if (a === 'pdf') {
-        const doc = pdfDoc('KARTU STOK', `Periode: ${F.kartu.from ? fmtD(F.kartu.from) : 'awal'} s/d ${F.kartu.to ? fmtD(F.kartu.to) : fmtD(today())}`); if (!doc) return;
-        doc.setFontSize(9.5).setFont('helvetica', 'normal');
-        doc.text(`No. Part   : ${pdfSafe(cur.p.partNo)}`, 14, 42); doc.text(`Nama       : ${pdfSafe(cur.p.name)}`, 14, 47);
-        doc.text(`Satuan     : ${pdfSafe(cur.p.unit)}`, 110, 42); doc.text(`Lokasi rak : ${pdfSafe(cur.p.location || '-')}`, 110, 47);
-        const body = [...(F.kartu.from ? [['', '', 'Saldo awal periode', '', '', fmtN(cur.open)]] : []), ...cur.rows.map(r => [fmtD(r.date), pdfSafe(r.docNo), pdfSafe(desc(r)), r.i ? fmtN(r.i) : '', r.o ? fmtN(r.o) : '', fmtN(r.bal)])];
-        pdfTable(doc, 52, ['Tanggal', 'No. Dokumen', 'Keterangan', 'Masuk', 'Keluar', 'Saldo'], body, { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } } });
-        saveFile(`kartu-stok-${cur.p.partNo}.pdf`, doc.output('blob'));
-      }
+      const rows = kartuRows(cur);
+      if (a === 'csv') exportCSV('kartu-stok-' + cur.p.partNo, [['KARTU STOCK', 'WH IPE Sampit'], ['Part Number', cur.p.partNo], ['Description', cur.p.name], ['Bin Location', cur.p.location || ''], ['Supersession', cur.p.supersession || ''], [], ['DATE', 'KETERANGAN', 'REMARK', 'IN', 'OUT', 'STOCK'], ...rows.map(r => [fmtD(r.date), r.ket, r.remark, r.i || '', r.o || '', r.bal])]);
+      if (a === 'pdf') kartuPDF(cur.p, rows);
     },
     fill() {
       cur = get(); const box = $('#kc');
       if (!cur) { box.innerHTML = `<div class="card">${empty(S.parts.length ? 'Pilih spare part untuk menampilkan kartu stoknya.' : 'Belum ada spare part.')}</div>`; return; }
-      const { p, open, rows, tin, tout } = cur; const s = partStatus(p);
-      box.innerHTML = `<div class="cards">
-        <div class="card stat hl"><small>${esc(p.partNo)}</small><b style="font-size:17px;letter-spacing:0">${esc(p.name)}</b><div class="mut" style="margin-top:6px">${esc(p.category || '')} ${p.location ? '· Rak ' + esc(p.location) : ''}</div></div>
-        <div class="card stat"><small>Stok saat ini</small><b>${fmtN(stock(p.id))}</b> <span class="mut">${esc(p.unit)}</span> <span class="chip ${s.c}">${s.k}</span></div>
-        <div class="card stat"><small>Masuk (periode)</small><b class="in">${fmtN(tin)}</b></div>
-        <div class="card stat"><small>Keluar (periode)</small><b class="out">${fmtN(tout)}</b></div></div>
-      <div class="tw">${rows.length || F.kartu.from ? `<table><thead><tr><th>Tanggal</th><th>No. Dokumen</th><th>Keterangan</th><th class="n">Masuk</th><th class="n">Keluar</th><th class="n">Saldo</th></tr></thead><tbody>
-        ${F.kartu.from ? `<tr><td colspan="5" class="mut"><i>Saldo awal periode</i></td><td class="n"><b>${fmtN(open)}</b></td></tr>` : ''}
-        ${rows.map(r => `<tr><td>${fmtD(r.date)}</td><td class="mono">${esc(r.docNo)}</td><td>${esc(r.kind)}${partyName(r) ? ' · ' + esc(partyName(r)) : ''}${poText(r) ? ' · PO ' + esc(poText(r)) : ''}${r.ekspedisi ? ' · ' + esc(r.ekspedisi) : ''}${r.awb ? ' · ' + esc(r.awb) : ''}${r.note ? `<div class="mut" style="font-size:12px">${esc(r.note)}</div>` : ''}</td><td class="n in">${r.i ? fmtN(r.i) : ''}</td><td class="n out">${r.o ? fmtN(r.o) : ''}</td><td class="n"><b>${fmtN(r.bal)}</b></td></tr>`).join('')}</tbody></table>` : empty('Belum ada transaksi untuk part ini.')}</div>`;
+      const { p } = cur, rows = kartuRows(cur), sm = kartuSummary(cur, rows), z = '<span class="z">—</span>';
+      box.innerHTML = `<div class="kc">
+        <div class="kc-head"><div class="kc-info"><h3>KARTU STOCK</h3><div class="sub">WH IPE Sampit</div>
+          <table><tr><td>Part Number :</td><td class="v">${esc(p.partNo)}</td></tr><tr><td>Description :</td><td class="v">${esc(p.name)}</td></tr><tr><td>Bin Location:</td><td class="v">${esc(p.location || '')}</td></tr><tr><td>Supersession:</td><td class="v">${esc(p.supersession || '')}</td></tr></table></div>${KC_LOGO}</div>
+        <div class="kc-sum"><div><small>Stock Awal</small><b>${fmtN(sm.awal)}</b></div><div><small>Total Masuk</small><b class="in">${fmtN(sm.tin)}</b></div><div><small>Total Keluar</small><b class="out">${fmtN(sm.tout)}</b></div><div><small>Stock Akhir</small><b class="fin">${fmtN(sm.akhir)}</b></div></div>
+        <div class="kc-tw">${rows.length ? `<table class="kt"><thead><tr><th>Date</th><th>Keterangan</th><th>Remark</th><th class="n">In</th><th class="n">Out</th><th class="n">Stock</th></tr></thead><tbody>${rows.map(r => `<tr><td class="d">${fmtD(r.date)}</td><td>${esc(r.ket)}</td><td class="rm">${esc(r.remark)}</td><td class="n in">${r.i ? fmtN(r.i) : z}</td><td class="n out">${r.o ? fmtN(r.o) : z}</td><td class="n s">${fmtN(r.bal)}</td></tr>`).join('')}</tbody></table>` : empty('Belum ada transaksi untuk part ini.')}</div></div>`;
     }
   };
+}
+function kartuPDF(p, rows) {
+  const J = window.jspdf && window.jspdf.jsPDF; if (!J) { toast('Pustaka PDF belum termuat, coba lagi sebentar', 'err'); return; }
+  const doc = new J({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const M = 6, G = 4, PW = (210 - 2 * M - G) / 2, PH = (297 - 2 * M - G) / 2, PER = 26, RH = 3.9, HH = 31;
+  const cw = [16, 33, 22, 8, 8, 10], NAVY = [27, 42, 74], BAND = [247, 245, 241];
+  const fit = (t, w) => { t = pdfSafe(String(t == null ? '' : t)); if (doc.getTextWidth(t) <= w) return t; while (t.length > 1 && doc.getTextWidth(t + '…') > w) t = t.slice(0, -1); return t + '…'; };
+  const pages = Math.max(1, Math.ceil(rows.length / (PER * 4)));
+  const panel = (x, y, chunk) => {
+    // header
+    doc.setTextColor(20).setFont('helvetica', 'bold').setFontSize(7.5).text('KARTU STOCK', x + 3, y + 5); const w = doc.getTextWidth('KARTU STOCK'); doc.setLineWidth(0.25).setDrawColor(20).line(x + 3, y + 5.7, x + 3 + w, y + 5.7);
+    doc.setFont('helvetica', 'normal').setFontSize(5.5).setTextColor(70).text('WH IPE Sampit', x + 3, y + 9);
+    const info = [['Part Number :', p.partNo], ['Description :', p.name], ['Bin Location :', p.location || ''], ['Supersession :', p.supersession || '']], iw = PW - 27 - 6;
+    info.forEach((r, k) => { const yy = y + 11.5 + k * 4.6; if (k % 2) { doc.setFillColor(...BAND); doc.rect(x + 3, yy - 3.2, iw, 4.6, 'F'); } doc.setFont('helvetica', 'normal').setFontSize(4.6).setTextColor(90).text(r[0], x + 5, yy); doc.setFont('courier', 'bold').setFontSize(4.8).setTextColor(20).text(fit(r[1], iw - 22), x + 3 + 20, yy); });
+    const lx = x + PW - 27; doc.setDrawColor(215).setLineWidth(0.2).line(lx, y + 1, lx, y + HH - 2);
+    doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...NAVY).text('MITRA', lx + 2.5, y + 14); const mw = doc.getTextWidth('MITRA ');
+    doc.setFillColor(20, 20, 20).circle(lx + 2.5 + mw + 0.8, y + 12.5, 0.9, 'F'); doc.setTextColor(245, 190, 0).text('IPE', lx + 2.5 + mw + 2.6, y + 14);
+    doc.setFont('helvetica', 'bold').setFontSize(2.9).setTextColor(60).text('PT. INDONESIA PRIMA', lx + 2.5, y + 17.2).text('EQUIPMENT', lx + 2.5, y + 19.6);
+    // table header
+    const ty = y + HH; doc.setFillColor(...NAVY).rect(x + 3, ty, PW - 6, 5, 'F');
+    const heads = ['DATE', 'KETERANGAN', 'REMARK', 'IN', 'OUT', 'STOCK']; let cx = x + 3;
+    const xs = cw.map((c, k) => { const s = cx; cx += c * ((PW - 6) / 97); return s; }), wsc = (PW - 6) / 97;
+    doc.setFont('helvetica', 'bold').setFontSize(4.6).setTextColor(255);
+    heads.forEach((t, k) => { if (k >= 3) doc.text(t, xs[k] + cw[k] * wsc - 1.2, ty + 3.3, { align: 'right' }); else doc.text(t, xs[k] + 1.2, ty + 3.3); });
+    chunk.forEach((r, i) => {
+      const yy = ty + 5 + i * RH; if (i % 2) { doc.setFillColor(...BAND); doc.rect(x + 3, yy, PW - 6, RH, 'F'); }
+      const by = yy + 2.7;
+      doc.setFont('courier', 'normal').setFontSize(4.4).setTextColor(90).text(fmtD(r.date), xs[0] + 1.2, by);
+      doc.setFont('helvetica', 'normal').setFontSize(4.6).setTextColor(20).text(fit(r.ket, cw[1] * wsc - 2), xs[1] + 1.2, by);
+      doc.setFont('courier', 'normal').setFontSize(4.2).setTextColor(100).text(fit(r.remark, cw[2] * wsc - 2), xs[2] + 1.2, by);
+      doc.setFont('helvetica', 'bold').setFontSize(4.6);
+      if (r.i) doc.setTextColor(21, 128, 61).text(fmtN(r.i), xs[3] + cw[3] * wsc - 1.2, by, { align: 'right' }); else doc.setTextColor(190).text('-', xs[3] + cw[3] * wsc - 1.2, by, { align: 'right' });
+      if (r.o) doc.setTextColor(185, 28, 28).text(fmtN(r.o), xs[4] + cw[4] * wsc - 1.2, by, { align: 'right' }); else doc.setTextColor(190).text('-', xs[4] + cw[4] * wsc - 1.2, by, { align: 'right' });
+      doc.setTextColor(...NAVY).text(fmtN(r.bal), xs[5] + cw[5] * wsc - 1.2, by, { align: 'right' });
+    });
+    doc.setDrawColor(225).setLineWidth(0.15).line(x + 3, ty + 5 + Math.max(chunk.length, 1) * RH, x + PW - 3, ty + 5 + Math.max(chunk.length, 1) * RH);
+  };
+  for (let pg = 0; pg < pages; pg++) {
+    if (pg) doc.addPage();
+    for (let q = 0; q < 4; q++) {
+      const chunk = rows.slice(pg * PER * 4 + q * PER, pg * PER * 4 + (q + 1) * PER);
+      if (!chunk.length && (q > 0 || rows.length)) break;
+      panel(M + (q % 2) * (PW + G), M + Math.floor(q / 2) * (PH + G), chunk);
+    }
+    doc.setFont('helvetica', 'normal').setFontSize(4.5).setTextColor(150).text(`${pdfSafe(p.partNo)} · dicetak ${fmtD(today())} · hal ${pg + 1}/${pages}`, 105, 293, { align: 'center' });
+  }
+  saveFile(`kartu-stok-${p.partNo.replace(/[\\/:*?"<>|]/g, '-')}.pdf`, doc.output('blob'));
+  return doc;
 }
 
 /* ============ CUSTOMER & SUPPLIER ============ */
