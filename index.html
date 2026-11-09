@@ -850,7 +850,7 @@ function importParts() {
 const poText = m => m.poRef || poMap.get(m.poId)?.poNo || '';
 const isOpening = m => /saldo awal/i.test(m.kind || '');
 function viewMoves() {
-  const st = F.all; let rows = [];
+  const st = F.all; let rows = []; const sel = (st.sel = st.sel || new Set());
   const mode = () => st.dir || 'all';
   const kindsOf = () => mode() === 'in' ? IN_TYPES : mode() === 'out' ? OUT_TYPES : [...IN_TYPES, ...OUT_TYPES];
   const label = () => mode() === 'in' ? 'Barang Masuk' : mode() === 'out' ? 'Barang Keluar' : 'Transaksi Part In-Out';
@@ -864,12 +864,15 @@ function viewMoves() {
       <label class="mut">Dari <input type="date" id="from" value="${st.from}"></label>
       <label class="mut">Sampai <input type="date" id="to" value="${st.to}"></label>
       <button class="btn" data-act="thismonth">Bulan ini</button>
-      <span class="grow"></span>
+      <span id="bk"></span><span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
       ${canWrite ? '<button class="btn" data-act="putaway">Putaway List</button><button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
-    input(e) { const k = { q: 'q', kind: 'kind', from: 'from', to: 'to' }[e.target.id]; if (k) { st[k] = e.target.value; this.fill(); } },
+    input(e) {
+      if (e.target.id === 'selall') { for (const x of rows.slice(0, 500)) { if (e.target.checked) sel.add(x.id); else sel.delete(x.id); } this.fill(); return; }
+      if (e.target.dataset.sel) { if (e.target.checked) sel.add(e.target.dataset.sel); else sel.delete(e.target.dataset.sel); this.fill(); return; }
+      const k = { q: 'q', kind: 'kind', from: 'from', to: 'to' }[e.target.id]; if (k) { st[k] = e.target.value; this.fill(); } },
     act(a, id) {
       if (a === 'tab') { st.dir = id || ''; st.kind = ''; this.fill(); }
       if (a === 'thismonth') {
@@ -878,6 +881,8 @@ function viewMoves() {
         $('#from').value = st.from; $('#to').value = st.to; this.fill();
       }
       if (a === 'putaway') putawaySelect();
+      if (a === 'bulk') bulkMoves([...sel].filter(i => S.movements.some(x => x.id === i)), () => { sel.clear(); this.fill(); });
+      if (a === 'clrsel') { sel.clear(); this.fill(); }
       if (a === 'addin') openTx('in');
       if (a === 'addout') openTx('out');
       if (a === 'del') delMove(id);
@@ -895,9 +900,44 @@ function viewMoves() {
         .sort((a, b) => ((b.date + (b.at || '')) > (a.date + (a.at || '')) ? 1 : -1));
       const tin = rows.reduce((s, m) => s + (m.dir === 'in' ? m.qty : 0), 0), tout = rows.reduce((s, m) => s + (m.dir === 'out' ? m.qty : 0), 0);
       const sIn = mode() !== 'out', sOut = mode() !== 'in';
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n q3">In</th>' : ''}${sOut ? '<th class="n q3">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr><td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n q3 in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n q3 out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="5" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}${sIn ? ` · Total IN <b class="in">${fmtN(tin)}</b>` : ''}${sOut ? ` · Total OUT <b class="out">${fmtN(tout)}</b>` : ''}</td>${sIn ? '<td class="q3"></td>' : ''}${sOut ? '<td class="q3"></td>' : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label().toLowerCase()} untuk filter ini.` : 'Memuat…');
+      for (const i of [...sel]) if (!S.movements.some(x => x.id === i)) sel.delete(i);
+      const bk = $('#bk'); if (bk) bk.innerHTML = canWrite && sel.size ? `<button class="btn primary" data-act="bulk">Ubah Massal (${sel.size})</button><button class="btn" data-act="clrsel">Batal pilih</button>` : '';
+      const allOn = rows.length && rows.slice(0, 500).every(x => sel.has(x.id));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr>${canWrite ? `<th style="width:36px"><input type="checkbox" id="selall" ${allOn ? 'checked' : ''} title="Pilih semua yang tampil" style="width:18px;height:18px"></th>` : ''}<th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n q3">In</th>' : ''}${sOut ? '<th class="n q3">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr ${sel.has(m.id) ? 'style="background:#fff8e1"' : ''}>${canWrite ? `<td><input type="checkbox" data-sel="${m.id}" ${sel.has(m.id) ? 'checked' : ''} style="width:18px;height:18px"></td>` : ''}<td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n q3 in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n q3 out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="${canWrite ? 6 : 5}" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}${sIn ? ` · Total IN <b class="in">${fmtN(tin)}</b>` : ''}${sOut ? ` · Total OUT <b class="out">${fmtN(tout)}</b>` : ''}</td>${sIn ? '<td class="q3"></td>' : ''}${sOut ? '<td class="q3"></td>' : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label().toLowerCase()} untuk filter ini.` : 'Memuat…');
     }
   };
+}
+function bulkMoves(ids, done) {
+  if (!canWrite) return denied();
+  const ms = ids.map(i => S.movements.find(x => x.id === i)).filter(Boolean);
+  if (!ms.length) { toast('Pilih minimal satu transaksi.', 'err'); return; }
+  const dirs = new Set(ms.map(x => x.dir)), kinds = dirs.size === 1 ? (dirs.has('in') ? IN_TYPES : OUT_TYPES) : null;
+  const row = (label, name, o = {}) => `<div class="f"><span>${label}</span><div style="display:flex;gap:8px;align-items:center"><input name="${name}" ${o.type ? `type="${o.type}"` : ''} ${o.list ? `list="${o.list}"` : ''} placeholder="${o.noClr ? '(kosong = tidak diubah)' : '(kosong = tidak diubah)'}" style="flex:1">${o.noClr ? '' : `<label class="mut" style="white-space:nowrap;font-size:12px"><input type="checkbox" name="clr_${name}"> kosongkan</label>`}</div></div>`;
+  const kindRow = kinds ? `<div class="f"><span>FORM/TO</span><select name="kind"><option value="">(tidak diubah)</option>${kinds.map(k => `<option>${esc(k)}</option>`).join('')}</select></div>` : '';
+  const m = modal(`<h3>Ubah Massal ${ms.length} Transaksi</h3>
+  <details style="margin-bottom:10px"><summary class="mut" style="cursor:pointer;font-size:13px">Lihat transaksi yang dipilih</summary><div class="mut" style="font-size:12.5px;max-height:120px;overflow:auto;margin-top:6px">${ms.map(x => `${esc(fmtD(x.date))} · ${esc(partMap.get(x.partId)?.partNo || '?')} · ${x.dir === 'in' ? 'IN' : 'OUT'} ${fmtN(x.qty)}`).join('<br>')}</div></details>
+  <p class="mut" style="margin:0 0 10px;font-size:13px">Isi hanya kolom yang ingin disamakan, misalnya No. BPB/GR/GI yang sama. Kolom yang dibiarkan kosong tidak diubah. Centang <b>kosongkan</b> untuk menghapus isi kolom itu pada semua transaksi terpilih.</p>
+  <form id="bf">${row('Tanggal', 'date', { type: 'date', noClr: true })}${row('No. Dokumen (BPB/GR/GI)', 'docNo')}${row('Form / Customer', 'party', { list: dirs.size === 1 && dirs.has('out') ? 'custlist' : 'srclist' })}${kindRow}${row('Ekspedisi', 'ekspedisi', { list: 'ekspList' })}${row('PO Cust / Req', 'poRef', { list: 'polist' })}${row('AWB / Resi', 'awb')}${row('Remark', 'note')}</form>
+  <div class="err" id="berr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Terapkan ke ${ms.length} transaksi</button></div>`);
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') return m.close();
+    const f = $('#bf', m.el), err = $('#berr', m.el), patch = {}; err.textContent = '';
+    for (const k of ['docNo', 'party', 'ekspedisi', 'poRef', 'awb', 'note']) { const inp = f.elements[k]; if (f.elements['clr_' + k].checked) patch[k] = ''; else if (inp.value.trim()) patch[k] = inp.value.trim(); }
+    if (f.elements.kind && f.elements.kind.value) patch.kind = f.elements.kind.value;
+    if (f.elements.date.value) patch.date = f.elements.date.value;
+    if (!Object.keys(patch).length) { err.textContent = 'Isi minimal satu kolom yang ingin diubah.'; return; }
+    const bad = ms.find(x => closedSet.has((x.date || '').slice(0, 7)) || (patch.date && closedSet.has(patch.date.slice(0, 7))));
+    if (bad) { err.textContent = lockMsg(closedSet.has((bad.date || '').slice(0, 7)) ? bad.date : patch.date); return; }
+    b.disabled = true; let n = 0;
+    const upd = x => {
+      const o = { ...patch, updatedAt: nowISO() };
+      if ('party' in patch) { const pl = (x.dir === 'in' ? S.suppliers : S.customers).find(y => y.name.toLowerCase() === patch.party.toLowerCase()); o.partyId = pl && patch.party ? pl.id : ''; }
+      if ('poRef' in patch) { const k = patch.poRef.toLowerCase(), po = k ? S.pos.find(p => p.poNo.toLowerCase() === k && p.status !== 'batal') : null; o.poId = po ? po.id : ''; }
+      return db.doc('movements/' + x.id).update(o);
+    };
+    const ok = await guarded(async () => { for (let i = 0; i < ms.length; i += 10) { await Promise.all(ms.slice(i, i + 10).map(upd)); n = Math.min(ms.length, i + 10); b.textContent = `Menyimpan ${n}/${ms.length}…`; } });
+    if (ok) { m.close(); toast(`${ms.length} transaksi diperbarui`); done && done(); } else { b.disabled = false; b.textContent = 'Coba lagi'; }
+  });
 }
 const lockMsg = d => `Bulan ${(d || '').slice(0, 7)} sudah ditutup. Buka kembali di menu Tutup Bulan bila perlu mengubahnya.`;
 async function delMove(id) {
