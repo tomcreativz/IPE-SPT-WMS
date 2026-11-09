@@ -439,14 +439,14 @@ const empty = (t) => `<div class="empty">${t}</div>`;
 
 const kpi = (label, val, sub, tone = '') => `<div class="card stat kpic ${tone}"><small>${label}</small><b>${val}</b><div class="ks">${sub}</div></div>`;
 /* ============ SALIN KE SAP (No. Part + Qty) ============ */
-async function copySAP(pairs, what) {
+async function copySAP(pairs, what, col) {
   const mp = new Map(); for (const [pn, q] of pairs) { if (!pn || !(q > 0)) continue; mp.set(pn, (mp.get(pn) || 0) + q); }
   if (!mp.size) { toast('Tidak ada baris part untuk disalin.', 'err'); return false; }
-  const txt = [...mp].map(([pn, q]) => pn + '\t' + String(Math.round(q * 1000) / 1000)).join('\r\n');
+  const txt = [...mp].map(([pn, q]) => col === 1 ? String(Math.round(q * 1000) / 1000) : pn).join('\r\n');
   let ok = false;
   try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(txt); ok = true; } } catch (e) { }
   if (!ok) { try { const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;left:-9999px;top:0'; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (e) { } }
-  if (ok) toast(`${mp.size} part disalin (No. Part + Qty)${what ? ' · ' + what : ''}. Paste di SAP dengan Ctrl+V.`);
+  if (ok) toast(`${mp.size} baris ${col === 1 ? 'Qty' : 'No. Part'} disalin${what ? ' · ' + what : ''}. Paste di SAP dengan Ctrl+V.`);
   else toast('Gagal menyalin otomatis. Izinkan akses clipboard pada browser.', 'err');
   return ok;
 }
@@ -910,7 +910,7 @@ function viewMoves() {
       <label class="mut">Sampai <input type="date" id="to" value="${st.to}"></label>
       <button class="btn" data-act="thismonth">Bulan ini</button>
       <span id="bk"></span><span class="grow"></span>
-      <button class="btn" data-act="sap" title="Salin kolom No. Part dan Qty untuk ditempel di SAP">Salin ke SAP</button><button class="btn" data-act="csv">Export CSV</button>
+      <button class="btn" data-act="sapp" title="Salin kolom No. Part untuk ditempel di SAP">Salin Part</button><button class="btn" data-act="sapq" title="Salin kolom Qty untuk ditempel di SAP">Salin Qty</button><button class="btn" data-act="csv">Export CSV</button>
       ${canWrite ? '<button class="btn" data-act="putaway">Putaway List</button><button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
@@ -926,10 +926,10 @@ function viewMoves() {
         $('#from').value = st.from; $('#to').value = st.to; this.fill();
       }
       if (a === 'putaway') putawaySelect();
-      if (a === 'sap') {
+      if (a === 'sapp' || a === 'sapq') {
         const src = sel.size ? rows.filter(m => sel.has(m.id)) : rows, ds = new Set(src.map(m => m.dir));
         if (ds.size > 1) { toast('Ada transaksi Masuk dan Keluar sekaligus. Pilih tab Masuk atau Keluar dulu.', 'err'); return; }
-        copySAP(src.map(m => [partMap.get(m.partId)?.partNo, m.qty]), sel.size ? sel.size + ' baris terpilih' : 'semua baris yang tampil');
+        copySAP(src.map(m => [partMap.get(m.partId)?.partNo, m.qty]), sel.size ? sel.size + ' baris terpilih' : 'semua baris yang tampil', a === 'sapq' ? 1 : 0);
       }
       if (a === 'bulk') bulkMoves([...sel].filter(i => S.movements.some(x => x.id === i)), () => { sel.clear(); this.fill(); });
       if (a === 'clrsel') { sel.clear(); this.fill(); }
@@ -2180,7 +2180,7 @@ function poDetail(id) {
   <dl class="kv"><dt>Customer</dt><dd>${esc(c?.name || '—')}</dd><dt>Plant</dt><dd>${esc(po.plant) || '—'}</dd><dt>Tanggal PO</dt><dd>${fmtD(po.date)}</dd><dt>Catatan</dt><dd>${esc(po.note) || '—'}</dd><dt>Nilai PO</dt><dd>${fmtRp(inf.val)} <span class="mut">(qty × harga master part)</span></dd>${po.picked && inf.open ? `<dt>Picking</dt><dd><span class="chip info">SUDAH DIPICKING</span> <span class="mut">${esc(po.picked.by || '')} · ${fmtD((po.picked.at || '').slice(0, 10))} ${esc((po.picked.at || '').slice(11, 16))}</span></dd>` : ''}</dl>
   <div class="tw"><table class="podt"><thead><tr><th>No</th><th>Part Number</th><th>Deskripsi</th><th>Bin</th><th class="n">Qty</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Free</th><th>KET</th><th>Status</th><th>Delivery</th></tr></thead><tbody>${inf.lines.map((l, i) => { const p = partMap.get(l.partId); return `<tr><td class="mut">${i + 1}</td><td class="mono" style="white-space:nowrap"><b>${p ? esc(p.partNo) : '(dihapus)'}</b></td><td class="dsc">${esc(p?.name || '')}${l.req ? ` <span class="chip gray" style="margin-left:4px">${esc(l.req)}</span>` : ''}</td><td style="white-space:nowrap">${esc(p?.location || '')}</td><td class="n">${fmtN(l.qty)}</td><td class="n">${fmtN(l.d)}</td><td class="n"><b>${fmtN(l.sisa)}</b></td><td class="n">${fmtN(l.stk)}</td><td class="n ${l.free < 0 ? 'out' : ''}">${fmtN(l.free)}</td><td>${l.ket === 'C' ? 'C' : (l.kurang ? '<span class="out">-' + fmtN(l.kurang) + '</span>' : '')}</td><td><span class="chip ${l.st.c}">${l.st.k}</span></td><td><span class="chip ${l.dv === 'DELIVERED' ? 'ok' : l.dv === 'REQ DONE' ? 'info' : 'gray'}">${l.dv}</span></td></tr>`; }).join('')}</tbody></table></div>
   ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td>${esc(x.kind)}</td><td>${esc(x.ekspedisi || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-  <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button><button class="btn" data-x="sap" title="Salin No. Part + Qty untuk SAP">Salin ke SAP</button>${inf.open && !inf.short && inf.lines.some(l => l.sisa > 0) ? '<button class="btn" data-x="pick">Picking List</button>' : ''}${canWrite && inf.open && !inf.short ? (po.picked ? '<button class="btn" data-x="unpicked">Batal tandai dipicking</button>' : '<button class="btn" data-x="picked">✓ Tandai sudah dipicking</button>') : ''}
+  <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button><button class="btn" data-x="sapp">Salin Part</button><button class="btn" data-x="sapq">Salin Qty</button>${inf.open && !inf.short && inf.lines.some(l => l.sisa > 0) ? '<button class="btn" data-x="pick">Picking List</button>' : ''}${canWrite && inf.open && !inf.short ? (po.picked ? '<button class="btn" data-x="unpicked">Batal tandai dipicking</button>' : '<button class="btn" data-x="picked">✓ Tandai sudah dipicking</button>') : ''}
   ${canWrite && inf.open ? '<button class="btn primary" data-x="send">Buat Barang Keluar</button>' : ''}${canPO ? '<button class="btn" data-x="edit">Edit</button>' : ''}
   ${canPO && po.status !== 'batal' && inf.st.k !== 'Selesai' ? (canWrite ? (po.cancelReq ? '<button class="btn danger" data-x="cancel">Setujui pembatalan</button><button class="btn" data-x="rejcancel">Tolak pengajuan</button>' : '<button class="btn" data-x="cancel">Batalkan PO</button>') : (po.cancelReq ? '<button class="btn" data-x="rejcancel">Tarik pengajuan batal</button>' : '<button class="btn" data-x="reqcancel">Ajukan pembatalan</button>')) : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
   ${isFull ? '<button class="btn danger" data-x="del">Hapus</button>' : ''}<button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
@@ -2189,7 +2189,7 @@ function poDetail(id) {
     const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
     if (x === 'c') m.close();
     if (x === 'edit') { m.close(); poForm(id); }
-    if (x === 'sap') { const ls = inf.lines.filter(l => l.sisa > 0); copySAP((ls.length ? ls : inf.lines).map(l => [partMap.get(l.partId)?.partNo, ls.length ? l.sisa : l.qty]), 'PO ' + po.poNo + (ls.length ? ' (sisa kirim)' : '')); }
+    if (x === 'sapp' || x === 'sapq') { const ls = inf.lines.filter(l => l.sisa > 0); copySAP((ls.length ? ls : inf.lines).map(l => [partMap.get(l.partId)?.partNo, ls.length ? l.sisa : l.qty]), 'PO ' + po.poNo + (ls.length ? ' (sisa kirim)' : ''), x === 'sapq' ? 1 : 0); }
     if (x === 'send') {
       m.close(); F.all.dir = 'out'; location.hash = '#transaksi'; if (current && current.fill) route();
       setTimeout(() => openTx('out', { kind: 'SOLD CUSTOMER', party: c?.name || '', poRef: po.poNo, note: 'Pengiriman PO ' + po.poNo, lines: inf.lines.filter(l => l.sisa > 0).map(l => ({ partId: l.partId, qty: Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa })) }), 60);
@@ -2323,7 +2323,7 @@ function openPutaway(moves) {
   <div id="pv"></div>
   <details style="margin:6px 0 4px"><summary class="mut" style="cursor:pointer;font-size:13px">Atur bin Gudang 2</summary>
     <label class="f" style="margin-top:8px"><span>Awalan bin yang termasuk Gudang 2 (pisahkan koma)</span><input id="g2" value="${esc(getG2())}"></label></details>
-  <div class="pk-act"><button class="btn" data-x="sap">Salin ke SAP</button><button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
+  <div class="pk-act"><button class="btn" data-x="sapp">Salin Part</button><button class="btn" data-x="sapq">Salin Qty</button><button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('pkm');
   const el = m.el, rowsNow = () => putawayRows(moves, $('#g2', el).value), keyOf = r => r.id, noBin = r => !r.bin || /^unlocated$/i.test(r.bin);
   const draw = () => {
@@ -2337,7 +2337,7 @@ function openPutaway(moves) {
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return;
     if (b.dataset.x === 'c') m.close();
-    if (b.dataset.x === 'sap') copySAP(rowsNow().map(r => [r.partNo, r.qty]), 'Putaway List');
+    if (b.dataset.x === 'sapp' || b.dataset.x === 'sapq') copySAP(rowsNow().map(r => [r.partNo, r.qty]), 'Putaway List', b.dataset.x === 'sapq' ? 1 : 0);
     if (b.dataset.x === 'reset') { done = new Set(); saveDone(); draw(); }
     if (b.dataset.x === 'dl') {
       const g2 = $('#g2', el).value; await saveG2(g2.trim());
@@ -2413,7 +2413,7 @@ function openPicking(items) {
   <div id="pv"></div>
   <details style="margin:6px 0 4px"><summary class="mut" style="cursor:pointer;font-size:13px">Atur bin Gudang 2</summary>
     <label class="f" style="margin-top:8px"><span>Awalan bin yang termasuk Gudang 2 (pisahkan koma)</span><input id="g2" placeholder="mis. D, C, H, I, N, M, VALET GG2" value="${esc(getG2())}"></label></details>
-  <div class="pk-act">${canWrite ? (allPicked() ? `<button class="btn" data-x="unmark">Batal tandai${multi ? ' ' + items.length + ' PO' : ' PO'}</button>` : `<button class="btn" data-x="mark">✓ Tandai ${multi ? items.length + ' PO' : 'PO'} dipicking</button>`) : ''}<button class="btn" data-x="sap">Salin ke SAP</button><button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
+  <div class="pk-act">${canWrite ? (allPicked() ? `<button class="btn" data-x="unmark">Batal tandai${multi ? ' ' + items.length + ' PO' : ' PO'}</button>` : `<button class="btn" data-x="mark">✓ Tandai ${multi ? items.length + ' PO' : 'PO'} dipicking</button>`) : ''}<button class="btn" data-x="sapp">Salin Part</button><button class="btn" data-x="sapq">Salin Qty</button><button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('pkm');
   const el = m.el, rowsNow = () => pickRows(items, $('#g2', el).value), keyOf = r => r.partNo + '|' + r.bin;
   const draw = () => {
@@ -2427,7 +2427,7 @@ function openPicking(items) {
     const b = e.target.closest('[data-x]'); if (!b) return;
     if (b.dataset.x === 'c') m.close();
     if (b.dataset.x === 'mark' || b.dataset.x === 'unmark') { const on = b.dataset.x === 'mark'; let ok = true; for (const x of items) if (ok && !!x.po.picked !== on) ok = await setPicked(x.po, on, true); if (ok) { toast(on ? (multi ? items.length + ' PO ditandai sudah dipicking' : 'PO ditandai sudah dipicking') : 'Tanda picking dihapus'); document.querySelectorAll('.ov').forEach(o => o.remove()); } }
-    if (b.dataset.x === 'sap') { copySAP(pickRows(items, $('#g2', el).value).map(r => [r.partNo, r.qty]), multi ? items.length + ' PO' : 'PO ' + items[0].po.poNo); }
+    if (b.dataset.x === 'sapp' || b.dataset.x === 'sapq') { copySAP(pickRows(items, $('#g2', el).value).map(r => [r.partNo, r.qty]), multi ? items.length + ' PO' : 'PO ' + items[0].po.poNo, b.dataset.x === 'sapq' ? 1 : 0); }
     if (b.dataset.x === 'reset') { done = new Set(); saveDone(); draw(); }
     if (b.dataset.x === 'dl') {
       const g2 = $('#g2', el).value; await saveG2(g2.trim());
