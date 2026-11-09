@@ -231,7 +231,7 @@ let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
 let canWrite = false, canPO = false, canCust = false, isFull = false, loadFailed = false;
 let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
-const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '' }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '', hide: false }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
+const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '', sel: new Set() }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '', hide: false }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
   kartu: { part: '', from: '', to: '' }, cust: { q: '', grp: '' }, supp: { q: '' }, po: { q: '', st: '' } };
 
 const IN_TYPES = ['IN', 'RETURN CUSTOMER', 'SALDO AWAL', 'KOREKSI (+)'];
@@ -716,7 +716,7 @@ function viewParts() {
       <select id="st"><option value="">Semua status</option><option value="Aman">Aman</option><option value="Menipis">Menipis</option><option value="Habis">Habis</option></select>
       <label class="chk-inline" title="Sembunyikan spare part yang stoknya 0"><input type="checkbox" id="hz" ${F.parts.hide ? 'checked' : ''}> Sembunyikan stok kosong</label>
       <span id="bk"></span><span class="grow"></span>
-      <button class="btn" data-act="csv">Export CSV</button>
+      <button class="btn" data-act="cekbin" title="Tarik data per lokasi bin untuk daily stock check">Cek Stok per Bin</button><button class="btn" data-act="csv">Export CSV</button>
       ${canWrite ? '<button class="btn" data-act="import">Impor CSV</button><button class="btn" data-act="xl">Impor Excel SOH</button><button class="btn" data-act="xk">Impor Kartu Stok</button><button class="btn" data-act="xu">Perbarui Harga/Model dari SOH</button><button class="btn primary" data-act="add">+ Spare Part</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
@@ -734,8 +734,14 @@ function viewParts() {
     act(a, id) {
       const sel = (F.parts.sel = F.parts.sel || new Set()), ids = [...sel].filter(i => S.parts.some(x => x.id === i));
       if (a === 'add') partForm();
+      if (a === 'cekbin') binCheck();
       if (a === 'edit') partForm(id || ids[0]);
       if (a === 'del') delPart(id || ids[0]);
+      if (a === 'delmany') {
+        const free = ids.filter(i => !S.movements.some(m => m.partId === i) && !S.pos.some(po => (po.items || []).some(x => x.partId === i))), skip = ids.length - free.length;
+        if (!free.length) { toast('Semua part terpilih punya riwayat transaksi/PO, jadi tidak bisa dihapus.', 'err'); return; }
+        delMany('parts', free, 'spare part', () => { sel.clear(); this.fill(); }, skip ? ` (${skip} part dilewati karena punya riwayat transaksi/PO)` : '');
+      }
       if (a === 'bulk') bulkParts(ids, () => { sel.clear(); this.fill(); });
       if (a === 'clrsel') { sel.clear(); this.fill(); }
       if (a === 'kartu') { F.kartu.part = id; location.hash = '#kartu-stok'; }
@@ -751,7 +757,7 @@ function viewParts() {
       const q = F.parts.q.toLowerCase();
       rows = S.parts.filter(p => (!q || [p.partNo, p.name, p.model, p.location, p.category].join(' ').toLowerCase().includes(q)) && (!F.parts.cat || p.category === F.parts.cat) && (!F.parts.st || partStatus(p).k === F.parts.st) && (!F.parts.hide || stock(p.id) > 0)).sort((a, b) => byText(a.partNo, b.partNo));
       const sel = (F.parts.sel = F.parts.sel || new Set()); for (const i of [...sel]) if (!S.parts.some(x => x.id === i)) sel.delete(i);
-      const bk = $('#bk'); if (bk) bk.innerHTML = canWrite && sel.size ? (sel.size === 1 ? `<button class="btn primary" data-act="edit">Edit</button>${isFull ? '<button class="btn" data-act="del">Hapus</button>' : ''}` : `<button class="btn primary" data-act="bulk">Ubah Massal (${sel.size})</button>`) + `<button class="btn" data-act="clrsel">Batal pilih (${sel.size})</button>` : '';
+      const bk = $('#bk'); if (bk) bk.innerHTML = canWrite && sel.size ? (sel.size === 1 ? `<button class="btn primary" data-act="edit">Edit</button>${isFull ? '<button class="btn" data-act="del">Hapus</button>' : ''}` : `<button class="btn primary" data-act="bulk">Ubah Massal (${sel.size})</button>${isFull ? `<button class="btn" data-act="delmany">Hapus (${sel.size})</button>` : ''}`) + `<button class="btn" data-act="clrsel">Batal pilih (${sel.size})</button>` : '';
       $('#tbl').innerHTML = rows.length ? `<table class="pt"><colgroup><col style="width:44px"><col style="width:13%"><col style="width:21%"><col style="width:8%"><col style="width:11%"><col style="width:8%"><col style="width:5%"><col style="width:12%"><col style="width:8%"><col style="width:10%"></colgroup><thead><tr>${canWrite ? `<th style="width:44px"><input type="checkbox" id="selall" ${rows.length && rows.every(x => sel.has(x.id)) ? 'checked' : ''} title="Pilih semua yang tampil" style="width:18px;height:18px"></th>` : '<th></th>'}<th>No. Part</th><th>Nama</th><th>Model</th><th>Lokasi</th><th class="n">Stok</th><th class="n">Min</th><th class="n">Harga</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const s = partStatus(p); return `<tr ${sel.has(p.id) ? 'style="background:#fff8e1"' : ''}>${canWrite ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''} style="width:18px;height:18px"></td>` : '<td></td>'}<td class="mono nw"><b>${esc(p.partNo)}</b></td><td class="nm">${esc(p.name)}<div class="mut" style="font-size:12px">${esc(suppMap.get(p.supplierId)?.name || '')}</div></td><td title="${esc(p.model)}">${esc(p.model)}</td><td class="nw">${esc(p.location)}</td><td class="n nw"><b>${fmtN(stock(p.id))}</b> <span class="mut">${esc(p.unit)}</span></td><td class="n">${fmtN(minOf(p))}</td><td class="n nw">${fmtRp(p.price)}</td><td class="nw"><span class="chip ${s.c}">${s.k}</span></td><td class="act nw"><button class="btn sm ghost" data-act="kartu" data-id="${p.id}">Kartu stok</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada spare part yang cocok dengan filter.' : (loaded.parts ? 'Belum ada spare part. Klik “+ Spare Part” atau “Impor CSV”.' : 'Memuat…'));
     }
   };
@@ -818,6 +824,66 @@ function partForm(id) {
     });
     if (ok) { m.close(); toast('Spare part tersimpan'); } else b.disabled = false;
   });
+}
+async function copyText(txt, msg) {
+  let ok = false;
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(txt); ok = true; } } catch (e) { }
+  if (!ok) { try { const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;left:-9999px;top:0'; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (e) { } }
+  toast(ok ? msg : 'Gagal menyalin otomatis. Izinkan akses clipboard pada browser.', ok ? undefined : 'err');
+  return ok;
+}
+/* Daily stock check: tarik data per lokasi bin */
+function binCheck() {
+  const bins = [...new Set(S.parts.map(p => (p.location || '').trim()).filter(Boolean))].sort(byText);
+  const m = modal(`<h3>Cek Stok per Bin</h3>
+  <p class="mut" style="margin:0 0 12px;font-size:13px">Tarik daftar part berdasarkan lokasi bin untuk mencocokkan stok fisik dengan sistem. Ketik beberapa bin dipisah koma atau spasi (contoh: <b>A1, A2, F4</b>). Awalan juga dikenali: <b>A1</b> mencakup A1-01, A1-04, dst.</p>
+  <div class="bar" style="margin-bottom:10px">
+    <input type="search" id="bq" list="binlist" placeholder="Bin: A1, A2, F4-03 … (kosong = semua bin)" style="flex:1;min-width:220px">
+    <datalist id="binlist">${bins.map(b => `<option value="${esc(b)}"></option>`).join('')}</datalist>
+    <label class="chk-inline"><input type="checkbox" id="bnz" checked> Hanya stok &gt; 0</label>
+  </div>
+  <div id="bsum" class="mut" style="font-size:13px;margin-bottom:8px"></div>
+  <div class="tw" style="max-height:46vh;overflow:auto"><div id="btbl"></div></div>
+  <div class="actions" style="flex-wrap:wrap;justify-content:flex-start;gap:8px">
+    <button class="btn primary" data-x="cp">Salin Part</button><button class="btn primary" data-x="cb">Salin Bin</button><button class="btn primary" data-x="cq">Salin Qty</button>
+    <button class="btn" data-x="ca">Salin Semua (Part, Bin, Qty)</button><button class="btn" data-x="csv">Export CSV</button><button class="btn" data-x="pdf">PDF</button>
+    <span class="grow"></span><button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
+  const el = m.el; let rows = [];
+  const compute = () => {
+    const toks = $('#bq', el).value.toUpperCase().split(/[\s,;]+/).filter(Boolean), nz = $('#bnz', el).checked;
+    rows = S.parts.filter(p => { const b = (p.location || '').trim().toUpperCase(); return (!toks.length || toks.some(t => b === t || b.startsWith(t))) && (!nz || stock(p.id) > 0); })
+      .map(p => ({ part: p.partNo, bin: (p.location || '').trim(), name: p.name, qty: stock(p.id), unit: p.unit || '' })).sort((a, b) => byText(a.bin, b.bin) || byText(a.part, b.part));
+    const nb = new Set(rows.map(r => r.bin)).size;
+    $('#bsum', el).innerHTML = `<b>${rows.length}</b> part · <b>${nb}</b> bin · total qty <b>${fmtN(rows.reduce((a, r) => a + r.qty, 0))}</b>`;
+    $('#btbl', el).innerHTML = rows.length ? `<table><thead><tr><th>Bin</th><th>No. Part</th><th>Deskripsi</th><th class="n">Qty sistem</th></tr></thead><tbody>${rows.map(r => `<tr><td class="mono"><b>${esc(r.bin || '-')}</b></td><td class="mono">${esc(r.part)}</td><td>${esc(r.name)}</td><td class="n"><b>${fmtN(r.qty)}</b> <span class="mut">${esc(r.unit)}</span></td></tr>`).join('')}</tbody></table>` : '<div class="mut" style="padding:20px;text-align:center">Tidak ada part pada bin tersebut.</div>';
+  };
+  compute(); el.addEventListener('input', compute);
+  const q = n => String(Math.round(n * 1000) / 1000);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
+    if (x === 'c') return m.close();
+    if (!rows.length) { toast('Tidak ada data untuk disalin.', 'err'); return; }
+    const J = '\r\n';
+    if (x === 'cp') copyText(rows.map(r => r.part).join(J), `${rows.length} No. Part disalin`);
+    if (x === 'cb') copyText(rows.map(r => r.bin).join(J), `${rows.length} Bin disalin`);
+    if (x === 'cq') copyText(rows.map(r => q(r.qty)).join(J), `${rows.length} Qty disalin`);
+    if (x === 'ca') copyText(rows.map(r => [r.part, r.bin, q(r.qty)].join('\t')).join(J), `${rows.length} baris (Part, Bin, Qty) disalin. Bisa ditempel ke Excel.`);
+    if (x === 'csv') exportCSV('cek-stok-bin', [['NO. PART', 'BIN', 'DESKRIPSI', 'QTY SISTEM', 'SATUAN'], ...rows.map(r => [r.part, r.bin, r.name, r.qty, r.unit])]);
+    if (x === 'pdf') {
+      const doc = pdfDoc('CEK STOK PER BIN', `Dicetak: ${fmtD(today())} | ${rows.length} part | ${new Set(rows.map(r => r.bin)).size} bin | Filter: ${pdfSafe($('#bq', el).value.trim() || 'semua bin')}`); if (!doc) return;
+      pdfTable(doc, 40, ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty sistem', 'Qty fisik', 'Cek'], rows.map((r, i) => [i + 1, pdfSafe(r.bin), pdfSafe(r.part), pdfSafe(r.name), q(r.qty), '', '']), { theme: 'grid', columnStyles: { 4: { halign: 'right' } }, styles: { fontSize: 8.5, cellPadding: 1.8, lineColor: [200, 200, 200], lineWidth: 0.1 } });
+      saveFile(`cek-stok-bin-${today()}.pdf`, doc.output('blob'));
+    }
+  });
+}
+async function delMany(coll, ids, what, done, extra = '') {
+  if (!isFull) return denied();
+  if (!ids.length) { toast('Pilih minimal satu baris.', 'err'); return; }
+  if (!(await confirmBox(`Hapus ${ids.length} ${what} yang dipilih?${extra} Tindakan ini tidak bisa dibatalkan.`, `Ya, hapus ${ids.length}`))) return;
+  let n = 0;
+  const ok = await guarded(async () => { for (const id of ids) { await db.doc(`${coll}/${id}`).delete(); n++; } });
+  toast(ok ? `${n} ${what} dihapus` : `Berhenti setelah ${n} terhapus. Coba lagi.`, ok ? undefined : 'err');
+  done && done();
 }
 async function delPart(id) {
   if (!isFull) return denied();
@@ -941,6 +1007,11 @@ function viewMoves() {
         copySAP(src.map(m => [partMap.get(m.partId)?.partNo, m.qty]), sel.size ? sel.size + ' baris terpilih' : 'semua baris yang tampil', a === 'sapq' ? 1 : 0);
       }
       if (a === 'bulk') bulkMoves([...sel].filter(i => S.movements.some(x => x.id === i)), () => { sel.clear(); this.fill(); });
+      if (a === 'delmany') {
+        const all = [...sel].filter(i => S.movements.some(x => x.id === i)), ids = all.filter(i => !closedSet.has((S.movements.find(x => x.id === i).date || '').slice(0, 7))), skip = all.length - ids.length;
+        if (!ids.length) { toast('Semua transaksi terpilih berada di bulan yang sudah ditutup.', 'err'); return; }
+        delMany('movements', ids, 'transaksi', () => { sel.clear(); this.fill(); }, ' Saldo stok dan kartu stok ikut berubah.' + (skip ? ` (${skip} transaksi dilewati karena bulannya sudah ditutup)` : ''));
+      }
       if (a === 'clrsel') { sel.clear(); this.fill(); }
       if (a === 'addin') openTx('in');
       if (a === 'addout') openTx('out');
@@ -960,7 +1031,7 @@ function viewMoves() {
       const tin = rows.reduce((s, m) => s + (m.dir === 'in' ? m.qty : 0), 0), tout = rows.reduce((s, m) => s + (m.dir === 'out' ? m.qty : 0), 0);
       const sIn = mode() !== 'out', sOut = mode() !== 'in';
       for (const i of [...sel]) if (!S.movements.some(x => x.id === i)) sel.delete(i);
-      const bk = $('#bk'); if (bk) bk.innerHTML = canWrite && sel.size ? `<button class="btn primary" data-act="bulk">Ubah Massal (${sel.size})</button><button class="btn" data-act="clrsel">Batal pilih</button>` : '';
+      const bk = $('#bk'); if (bk) bk.innerHTML = canWrite && sel.size ? `<button class="btn primary" data-act="bulk">Ubah Massal (${sel.size})</button>${isFull ? `<button class="btn" data-act="delmany">Hapus (${sel.size})</button>` : ''}<button class="btn" data-act="clrsel">Batal pilih</button>` : '';
       const allOn = rows.length && rows.slice(0, 500).every(x => sel.has(x.id));
       $('#tbl').innerHTML = rows.length ? `<table><thead><tr>${canWrite ? `<th style="width:36px"><input type="checkbox" id="selall" ${allOn ? 'checked' : ''} title="Pilih semua yang tampil" style="width:18px;height:18px"></th>` : ''}<th>Tgl</th><th>Part Number</th><th>Detail</th><th>Form/Customer</th><th>BPB/GR/GI</th>${sIn ? '<th class="n q3">In</th>' : ''}${sOut ? '<th class="n q3">Out</th>' : ''}<th>Bin</th><th>Form/To</th><th>Ekspedisi</th><th>PO Cust/Req</th><th>AWB/Resi</th><th>Remark</th><th>Oleh</th><th></th></tr></thead><tbody>${rows.slice(0, 500).map(m => { const p = partMap.get(m.partId); return `<tr ${sel.has(m.id) ? 'style="background:#fff8e1"' : ''}>${canWrite ? `<td><input type="checkbox" data-sel="${m.id}" ${sel.has(m.id) ? 'checked' : ''} style="width:18px;height:18px"></td>` : ''}<td>${fmtD(m.date)}</td><td class="mono"><b>${esc(p?.partNo || '(dihapus)')}</b></td><td>${esc(p?.name || '')}</td><td>${esc(partyName(m))}</td><td class="mono">${esc(m.docNo)}</td>${sIn ? `<td class="n q3 in">${m.dir === 'in' ? fmtN(m.qty) : ''}</td>` : ''}${sOut ? `<td class="n q3 out">${m.dir === 'out' ? fmtN(m.qty) : ''}</td>` : ''}<td>${esc(p?.location || '')}</td><td>${esc(m.kind)}</td><td>${esc(m.ekspedisi || '')}</td><td class="mono">${esc(poText(m))}</td><td class="mono">${esc(m.awb || '')}</td><td class="mut">${esc(m.note || '')}</td><td class="mut">${esc(names[m.by] || '')}</td><td class="act">${isFull ? `<button class="btn sm" data-act="del" data-id="${m.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="${canWrite ? 6 : 5}" class="mut" style="padding:10px 12px">${rows.length} baris${rows.length > 500 ? ' (500 terbaru ditampilkan; export CSV untuk semuanya)' : ''}${sIn ? ` · Total IN <b class="in">${fmtN(tin)}</b>` : ''}${sOut ? ` · Total OUT <b class="out">${fmtN(tout)}</b>` : ''}</td>${sIn ? '<td class="q3"></td>' : ''}${sOut ? '<td class="q3"></td>' : ''}<td colspan="8"></td></tr></tfoot></table>` : empty(loaded.movements ? `Belum ada data ${label().toLowerCase()} untuk filter ini.` : 'Memuat…');
     }
@@ -2480,10 +2551,19 @@ function viewSO() {
     shell: `${soMissing ? `<div class="banner warn">Tabel Stock Order belum terbaca dari database. Jalankan <b>supabase-tambah-stockorder.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.${errDetail('sorders')}</div>` : ''}${ro()}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari part number / deskripsi…" value="${esc(F.so.q)}"><select id="per"></select>
       <select id="st"><option value="">Semua status</option>${['BELUM', 'SEBAGIAN', 'DONE'].map(s => `<option ${F.so.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && !soMissing ? '<button class="btn" data-act="xso">Impor SO dari SOH</button><button class="btn primary" data-act="add">+ Stock Order</button>' : ''}</div>
+      <span id="bk"></span><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && !soMissing ? '<button class="btn" data-act="xso">Impor SO dari SOH</button><button class="btn primary" data-act="add">+ Stock Order</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
-    input(e) { if (e.target.id === 'q') F.so.q = e.target.value; if (e.target.id === 'per') F.so.per = e.target.value; if (e.target.id === 'st') F.so.st = e.target.value; this.fill(); },
+    input(e) {
+      const sel = (F.so.sel = F.so.sel || new Set());
+      if (e.target.id === 'selall') { for (const x of rows) { if (e.target.checked) sel.add(x.id); else sel.delete(x.id); } this.fill(); return; }
+      if (e.target.dataset.sel) { if (e.target.checked) sel.add(e.target.dataset.sel); else sel.delete(e.target.dataset.sel); this.fill(); return; }
+      if (e.target.id === 'q') F.so.q = e.target.value; if (e.target.id === 'per') F.so.per = e.target.value; if (e.target.id === 'st') F.so.st = e.target.value; this.fill();
+    },
     act(a, id) {
+      const sel = (F.so.sel = F.so.sel || new Set()), ids = [...sel].filter(i => S.sorders.some(x => x.id === i));
+      if (a === 'clrsel') { sel.clear(); this.fill(); }
+      if (a === 'delmany') delMany('sorders', ids, 'baris Stock Order', () => { sel.clear(); this.fill(); });
+      if (a === 'closemany' || a === 'openmany') { const v = a === 'closemany'; guarded(async () => { for (const i of ids) await db.doc('sorders/' + i).update({ done: v }); }).then(ok => { if (ok) { toast(`${ids.length} baris ${v ? 'ditutup (C)' : 'dibuka lagi'}`); sel.clear(); this.fill(); } }); }
       if (a === 'add') soForm();
       if (a === 'xso') importSOFromSOH();
       if (a === 'del') delSO(id);
@@ -2493,10 +2573,12 @@ function viewSO() {
     fill() {
       const A = analysisNow();
       const pers = [...new Set(S.sorders.map(l => l.period).filter(Boolean))].sort().reverse();
-      const sel = $('#per'); if (sel) sel.innerHTML = '<option value="">Semua periode SO</option>' + pers.map(p => `<option ${p === F.so.per ? 'selected' : ''}>${esc(p)}</option>`).join('');
+      const pse = $('#per'); if (pse) pse.innerHTML = '<option value="">Semua periode SO</option>' + pers.map(p => `<option ${p === F.so.per ? 'selected' : ''}>${esc(p)}</option>`).join('');
       const q = F.so.q.toLowerCase();
       rows = S.sorders.filter(l => { const p = partMap.get(l.partId); return p && (!F.so.per || l.period === F.so.per) && (!F.so.st || soLineInfo(l).st === F.so.st) && (!q || (p.partNo + ' ' + p.name).toLowerCase().includes(q)); }).sort((a, b) => (b.date + b.period).localeCompare(a.date + a.period));
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>Tgl</th><th>Part number</th><th>Description</th><th>Periode SO</th><th>Movement</th><th class="n">Req SO</th><th class="n">Diterima</th><th class="n">Sisa</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(l => { const p = partMap.get(l.partId), i = soLineInfo(l), mv = A.get(l.partId)?.mv || ''; return `<tr><td>${fmtD(l.date)}</td><td class="mono"><b>${esc(p.partNo)}</b></td><td>${esc(p.name)}</td><td>${esc(l.period)}</td><td>${mv ? `<span class="chip ${mvChip(mv)}">${mv}</span>` : ''}</td><td class="n">${fmtN(i.req)}</td><td class="n">${fmtN(i.rec)}</td><td class="n"><b>${fmtN(i.sisa)}</b></td><td><span class="chip ${soChip(i.st)}">${l.done ? 'DONE (C)' : i.st}</span></td><td class="act">${canWrite ? `<button class="btn sm" data-act="done" data-id="${l.id}">${l.done ? 'Buka lagi' : 'Tutup (C)'}</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${l.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody></table>` : empty(S.sorders.length ? 'Tidak ada baris yang cocok.' : (loaded.sorders ? 'Belum ada Stock Order. Klik “+ Stock Order” atau buat dari menu Laporan Re-order.' : 'Memuat…'));
+      const sel = (F.so.sel = F.so.sel || new Set()); for (const i of [...sel]) if (!S.sorders.some(x => x.id === i)) sel.delete(i);
+      const bk = $('#bk'); if (bk) bk.innerHTML = canWrite && sel.size ? `<button class="btn" data-act="closemany">Tutup (C) ${sel.size}</button><button class="btn" data-act="openmany">Buka lagi</button>${isFull ? `<button class="btn danger" data-act="delmany">Hapus (${sel.size})</button>` : ''}<button class="btn" data-act="clrsel">Batal pilih</button>` : '';
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr>${canWrite ? `<th style="width:44px"><input type="checkbox" id="selall" ${rows.every(x => sel.has(x.id)) ? 'checked' : ''} title="Pilih semua yang tampil" style="width:18px;height:18px"></th>` : ''}<th>Tgl</th><th>Part number</th><th>Description</th><th>Periode SO</th><th>Movement</th><th class="n">Req SO</th><th class="n">Diterima</th><th class="n">Sisa</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(l => { const p = partMap.get(l.partId), i = soLineInfo(l), mv = A.get(l.partId)?.mv || ''; return `<tr ${sel.has(l.id) ? 'style="background:#fff8e1"' : ''}>${canWrite ? `<td><input type="checkbox" data-sel="${l.id}" ${sel.has(l.id) ? 'checked' : ''} style="width:18px;height:18px"></td>` : ''}<td>${fmtD(l.date)}</td><td class="mono"><b>${esc(p.partNo)}</b></td><td>${esc(p.name)}</td><td>${esc(l.period)}</td><td>${mv ? `<span class="chip ${mvChip(mv)}">${mv}</span>` : ''}</td><td class="n">${fmtN(i.req)}</td><td class="n">${fmtN(i.rec)}</td><td class="n"><b>${fmtN(i.sisa)}</b></td><td><span class="chip ${soChip(i.st)}">${l.done ? 'DONE (C)' : i.st}</span></td><td class="act">${canWrite ? `<button class="btn sm" data-act="done" data-id="${l.id}">${l.done ? 'Buka lagi' : 'Tutup (C)'}</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${l.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody></table>` : empty(S.sorders.length ? 'Tidak ada baris yang cocok.' : (loaded.sorders ? 'Belum ada Stock Order. Klik “+ Stock Order” atau buat dari menu Laporan Re-order.' : 'Memuat…'));
     }
   };
 }
