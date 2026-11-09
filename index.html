@@ -154,7 +154,7 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .lines .lh{background:#fafafa;font-size:11.5px;text-transform:uppercase;color:var(--mut);font-weight:600}
 .lines .lr{border-top:1px solid #f0f1f3}
 .lines input{padding:7px 9px;border:1px solid #d1d5db;border-radius:6px;width:100%}
-.lines.tx .lh,.lines.tx .lr{grid-template-columns:minmax(0,1fr) 170px 90px 90px 70px 70px 32px}.lines.tx .c{text-align:center}.lines.tx .lb{font-weight:600;white-space:nowrap}.lines.tx .lk,.lines.tx .lg{font-weight:600;font-variant-numeric:tabular-nums}
+.lines.tx .lr .lpo.inh::placeholder{color:#8a6d00;opacity:1;font-weight:600}.lines.tx .lh,.lines.tx .lr{grid-template-columns:minmax(0,1fr) 170px 90px 90px 70px 70px 32px}.lines.tx .c{text-align:center}.lines.tx .lb{font-weight:600;white-space:nowrap}.lines.tx .lk,.lines.tx .lg{font-weight:600;font-variant-numeric:tabular-nums}
 .lines.po .lh,.lines.po .lr{grid-template-columns:1.6fr 80px 130px 1fr 32px}.lines.po .lk{white-space:nowrap}
 .lines.so .lh,.lines.so .lr{grid-template-columns:1fr 90px 110px 70px 70px 32px}.lines.so .c{text-align:center}.lines.so .lk,.lines.so .lg{font-weight:600;font-variant-numeric:tabular-nums}.lines.so .lg{color:#b45309}
 @media(max-width:700px){.lines.tx .lr .lpo{grid-column:1/-1}.grid{grid-template-columns:1fr}.f.s2{grid-column:span 1}.lines .lh{display:none}.lines.po .lr{grid-template-columns:1fr 1fr}.lines.tx .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.tx .lr .lp{grid-column:1/4}.lines.tx .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.tx .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.tx .lg::before{content:'Free ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.so .lr .lp{grid-column:1/4}.lines.so .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.so .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lg::before{content:'Saran ';font-weight:400;font-size:11px;color:var(--mut)}}
@@ -909,6 +909,7 @@ function viewMoves() {
       <label class="mut">Dari <input type="date" id="from" value="${st.from}"></label>
       <label class="mut">Sampai <input type="date" id="to" value="${st.to}"></label>
       <button class="btn" data-act="thismonth">Bulan ini</button>
+      <button class="btn" data-act="resetf" title="Kosongkan semua filter dan pilihan">Reset</button>
       <span id="bk"></span><span class="grow"></span>
       <button class="btn" data-act="sapp" title="Salin kolom No. Part untuk ditempel di SAP">Salin Part</button><button class="btn" data-act="sapq" title="Salin kolom Qty untuk ditempel di SAP">Salin Qty</button><button class="btn" data-act="csv">Export CSV</button>
       ${canWrite ? '<button class="btn" data-act="putaway">Putaway List</button><button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
@@ -924,6 +925,10 @@ function viewMoves() {
         const t = today(), y = +t.slice(0, 4), mo = +t.slice(5, 7), last = new Date(y, mo, 0).getDate();
         st.from = t.slice(0, 8) + '01'; st.to = t.slice(0, 8) + String(last).padStart(2, '0');
         $('#from').value = st.from; $('#to').value = st.to; this.fill();
+      }
+      if (a === 'resetf') {
+        Object.assign(st, { q: '', from: '', to: '', kind: '', dir: '' }); sel.clear();
+        $('#q').value = ''; $('#from').value = ''; $('#to').value = ''; const ks = $('#kind'); if (ks) ks.value = ''; this.fill(); toast('Filter direset');
       }
       if (a === 'putaway') putawaySelect();
       if (a === 'sapp' || a === 'sapq') {
@@ -1012,22 +1017,23 @@ function openTx(dir, preset = {}) {
     ${fld('FORM/TO', 'kind', { opts: types.map(k => [k, k]), val: preset.kind || types[0] })}
     ${fld(dir === 'in' ? 'Dari (FORM/CUSTOMER)' : 'Customer / penerima (FORM/CUSTOMER)', 'party', { val: preset.party || '', list: dir === 'in' ? 'srclist' : 'custlist', ph: dir === 'in' ? 'mis. IPE SGP' : 'Ketik / pilih customer' })}
     ${fld('Ekspedisi', 'ekspedisi', { val: preset.ekspedisi || '', list: 'ekspList' })}
-    ${fld('PO CUST / REQ (untuk semua baris)', 'poRef', { val: preset.poRef || '', list: 'polist', ph: 'Kosongkan bila tiap baris beda PO' })}
+    ${fld('PO CUST / REQ (default)', 'poRef', { val: preset.poRef || '', list: 'polist', ph: 'Kosongkan bila tiap baris beda PO' })}
     ${fld('AWB / Resi', 'awb', { val: preset.awb || '' })}
     ${fld('Remark', 'note', { val: preset.note || '' })}
   </div>
   <div class="lines tx"><div class="lh"><span>Part number</span><span>PO Cust / Req</span><span class="c">Qty</span><span class="c">Bin</span><span class="c">Stok</span><span class="c">Free</span><span></span></div><div id="ls"></div>
-    <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO / SO</button>${dir === 'in' ? ' <button type="button" class="btn sm" data-x="paste">📋 Tempel tabel dari SAP</button>' : ''}</div></div>
+    <div class="mut" style="padding:8px 10px 0;font-size:12px;border-top:1px solid #f0f1f3">💡 Isi PO <b>sekali saja</b> di baris pertama. Baris di bawahnya yang kolom PO-nya dikosongkan otomatis <b>ikut PO di atasnya</b>. Isi PO lain di baris mana saja untuk memulai kelompok baru.</div><div style="padding:8px 10px;">  <button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO / SO</button>${dir === 'in' ? ' <button type="button" class="btn sm" data-x="paste">📋 Tempel tabel dari SAP</button>' : ''}</div></div>
   </form><div class="err" id="terr"></div>
   <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan transaksi</button></div>`, { wide: true });
   const el = m.el, f = $('#tx', el), ls = $('#ls', el), E = f.elements;
   const findPO = () => { const v = E.poRef.value.trim().toLowerCase(); return v ? S.pos.find(p => p.poNo.toLowerCase() === v && p.status !== 'batal') : null; };
   function info(d) { const p = partFromText($('.lp', d).value), fr = p ? stock(p.id) - (commit.get(p.id) || 0) : 0; $('.lb', d).textContent = p ? (p.location || '-') : ''; $('.lk', d).textContent = p ? fmtN(stock(p.id)) : ''; const g = $('.lg', d); g.textContent = p ? fmtN(fr) : ''; g.style.color = fr < 0 ? '#b91c1c' : ''; }
+  function refreshPO() { let cur = (E.poRef.value || '').trim(); for (const r of ls.children) { const i = $('.lpo', r), v = i.value.trim(); if (v) cur = v; i.placeholder = v ? '' : (cur ? '↳ ' + cur : 'ikut PO di atas'); i.classList.toggle('inh', !v && !!cur); } }
   function addLine(pid = '', qty = '', po = '') {
     const p = pid ? (partMap.get(pid) || S.parts.find(x => x.id === pid)) : null;
     const d = document.createElement('div'); d.className = 'lr';
     d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lpo" list="polist" placeholder="ikut PO di atas" value="${esc(po)}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="lb c"></span><span class="lk c"></span><span class="lg c"></span><button type="button" class="btn sm" data-x="rm" title="Hapus baris">×</button>`;
-    ls.appendChild(d); info(d);
+    ls.appendChild(d); info(d); refreshPO();
   }
   function fillPO() {
     if (dir === 'in') { const sl = findSO(); if (!sl.length) return; ls.innerHTML = ''; const seen = new Set(); for (const l of sl) { if (seen.has(l.partId)) continue; seen.add(l.partId); const i = soLineInfo(l); if (i.sisa > 0) addLine(l.partId, i.sisa); } if (!ls.children.length) addLine(); return; }
@@ -1044,7 +1050,8 @@ function openTx(dir, preset = {}) {
     if (E.kind.value === 'SOLD CUSTOMER') { if (!cur) { E.docNo.value = pre; } }
     else if (cur === pre) E.docNo.value = '';
   });
-  ls.addEventListener('input', e => { if (e.target.classList.contains('lp')) info(e.target.parentElement); });
+  ls.addEventListener('input', e => { if (e.target.classList.contains('lp')) info(e.target.parentElement); if (e.target.classList.contains('lpo')) refreshPO(); });
+  E.poRef.addEventListener('input', refreshPO);
   if (preset.lines && preset.lines.length) preset.lines.forEach(l => addLine(l.partId, l.qty)); else addLine();
   togglePO();
   el.addEventListener('click', async e => {
@@ -1054,11 +1061,11 @@ function openTx(dir, preset = {}) {
     if (x === 'addl') addLine();
     if (x === 'fillpo') fillPO();
     if (x === 'paste') pasteTable(lines => { [...ls.children].forEach(r => { if (!$('.lp', r).value.trim() && !$('.lq', r).value) r.remove(); }); lines.forEach(l => addLine(l.partId, l.qty)); if (!ls.children.length) addLine(); });
-    if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); }
+    if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); refreshPO(); }
     if (x === 's') {
       const err = $('#terr', el); err.textContent = '';
       if (!f.reportValidity()) return;
-      const lines = [...ls.children].map(r => ({ p: partFromText($('.lp', r).value), raw: $('.lp', r).value.trim(), q: parseFloat($('.lq', r).value), po: $('.lpo', r).value.trim() })).filter(l => l.raw || l.q);
+      let curPO = (E.poRef.value || '').trim(); const lines = [...ls.children].map(r => ({ p: partFromText($('.lp', r).value), raw: $('.lp', r).value.trim(), q: parseFloat($('.lq', r).value), po: (curPO = $('.lpo', r).value.trim() || curPO) })).filter(l => l.raw || l.q);
       if (!lines.length) { err.textContent = 'Isi minimal satu baris spare part.'; return; }
       for (const l of lines) { if (!l.p) { err.textContent = `Part “${l.raw}” tidak ditemukan. Pilih dari daftar yang muncul.`; return; } if (!(l.q > 0)) { err.textContent = `Qty untuk ${l.p.partNo} harus lebih dari 0.`; return; } }
       const sum = new Map(); for (const l of lines) sum.set(l.p.id, (sum.get(l.p.id) || 0) + l.q);
