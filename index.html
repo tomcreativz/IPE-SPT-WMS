@@ -153,10 +153,10 @@ table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-ove
 .lines .lh{background:#fafafa;font-size:11.5px;text-transform:uppercase;color:var(--mut);font-weight:600}
 .lines .lr{border-top:1px solid #f0f1f3}
 .lines input{padding:7px 9px;border:1px solid #d1d5db;border-radius:6px;width:100%}
-.lines.tx .lh,.lines.tx .lr{grid-template-columns:1fr 90px 90px 70px 70px 32px}.lines.tx .c{text-align:center}.lines.tx .lb{font-weight:600;white-space:nowrap}.lines.tx .lk,.lines.tx .lg{font-weight:600;font-variant-numeric:tabular-nums}
+.lines.tx .lh,.lines.tx .lr{grid-template-columns:minmax(0,1fr) 170px 90px 90px 70px 70px 32px}.lines.tx .c{text-align:center}.lines.tx .lb{font-weight:600;white-space:nowrap}.lines.tx .lk,.lines.tx .lg{font-weight:600;font-variant-numeric:tabular-nums}
 .lines.po .lh,.lines.po .lr{grid-template-columns:1.6fr 80px 130px 1fr 32px}.lines.po .lk{white-space:nowrap}
 .lines.so .lh,.lines.so .lr{grid-template-columns:1fr 90px 110px 70px 70px 32px}.lines.so .c{text-align:center}.lines.so .lk,.lines.so .lg{font-weight:600;font-variant-numeric:tabular-nums}.lines.so .lg{color:#b45309}
-@media(max-width:700px){.grid{grid-template-columns:1fr}.f.s2{grid-column:span 1}.lines .lh{display:none}.lines.po .lr{grid-template-columns:1fr 1fr}.lines.tx .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.tx .lr .lp{grid-column:1/4}.lines.tx .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.tx .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.tx .lg::before{content:'Free ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.so .lr .lp{grid-column:1/4}.lines.so .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.so .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lg::before{content:'Saran ';font-weight:400;font-size:11px;color:var(--mut)}}
+@media(max-width:700px){.lines.tx .lr .lpo{grid-column:1/-1}.grid{grid-template-columns:1fr}.f.s2{grid-column:span 1}.lines .lh{display:none}.lines.po .lr{grid-template-columns:1fr 1fr}.lines.tx .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.tx .lr .lp{grid-column:1/4}.lines.tx .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.tx .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.tx .lg::before{content:'Free ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lr{grid-template-columns:1fr 1fr 1fr 1fr}.lines.so .lr .lp{grid-column:1/4}.lines.so .lr [data-x=rm]{grid-column:4;grid-row:1}.lines.so .lk::before{content:'Stok ';font-weight:400;font-size:11px;color:var(--mut)}.lines.so .lg::before{content:'Saran ';font-weight:400;font-size:11px;color:var(--mut)}}
 .err{color:var(--bad);font-size:12.5px;margin-top:10px;min-height:16px}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:99;align-items:center}
 #toast div{background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
@@ -922,21 +922,21 @@ function openTx(dir, preset = {}) {
     ${fld('FORM/TO', 'kind', { opts: types.map(k => [k, k]), val: preset.kind || types[0] })}
     ${fld(dir === 'in' ? 'Dari (FORM/CUSTOMER)' : 'Customer / penerima (FORM/CUSTOMER)', 'party', { val: preset.party || '', list: dir === 'in' ? 'srclist' : 'custlist', ph: dir === 'in' ? 'mis. IPE SGP' : 'Ketik / pilih customer' })}
     ${fld('Ekspedisi', 'ekspedisi', { val: preset.ekspedisi || '', list: 'ekspList' })}
-    ${fld('PO CUST / REQ', 'poRef', { val: preset.poRef || '', list: 'polist', ph: 'No. PO/QT atau referensi' })}
+    ${fld('PO CUST / REQ (untuk semua baris)', 'poRef', { val: preset.poRef || '', list: 'polist', ph: 'Kosongkan bila tiap baris beda PO' })}
     ${fld('AWB / Resi', 'awb', { val: preset.awb || '' })}
     ${fld('Remark', 'note', { val: preset.note || '' })}
   </div>
-  <div class="lines tx"><div class="lh"><span>Part number</span><span class="c">Qty</span><span class="c">Bin</span><span class="c">Stok</span><span class="c">Free</span><span></span></div><div id="ls"></div>
+  <div class="lines tx"><div class="lh"><span>Part number</span><span>PO Cust / Req</span><span class="c">Qty</span><span class="c">Bin</span><span class="c">Stok</span><span class="c">Free</span><span></span></div><div id="ls"></div>
     <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO / SO</button>${dir === 'in' ? ' <button type="button" class="btn sm" data-x="paste">📋 Tempel tabel dari SAP</button>' : ''}</div></div>
   </form><div class="err" id="terr"></div>
   <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan transaksi</button></div>`, { wide: true });
   const el = m.el, f = $('#tx', el), ls = $('#ls', el), E = f.elements;
   const findPO = () => { const v = E.poRef.value.trim().toLowerCase(); return v ? S.pos.find(p => p.poNo.toLowerCase() === v && p.status !== 'batal') : null; };
   function info(d) { const p = partFromText($('.lp', d).value), fr = p ? stock(p.id) - (commit.get(p.id) || 0) : 0; $('.lb', d).textContent = p ? (p.location || '-') : ''; $('.lk', d).textContent = p ? fmtN(stock(p.id)) : ''; const g = $('.lg', d); g.textContent = p ? fmtN(fr) : ''; g.style.color = fr < 0 ? '#b91c1c' : ''; }
-  function addLine(pid = '', qty = '') {
+  function addLine(pid = '', qty = '', po = '') {
     const p = pid ? (partMap.get(pid) || S.parts.find(x => x.id === pid)) : null;
     const d = document.createElement('div'); d.className = 'lr';
-    d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="lb c"></span><span class="lk c"></span><span class="lg c"></span><button type="button" class="btn sm" data-x="rm" title="Hapus baris">×</button>`;
+    d.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lpo" list="polist" placeholder="ikut PO di atas" value="${esc(po)}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="lb c"></span><span class="lk c"></span><span class="lg c"></span><button type="button" class="btn sm" data-x="rm" title="Hapus baris">×</button>`;
     ls.appendChild(d); info(d);
   }
   function fillPO() {
@@ -968,7 +968,7 @@ function openTx(dir, preset = {}) {
     if (x === 's') {
       const err = $('#terr', el); err.textContent = '';
       if (!f.reportValidity()) return;
-      const lines = [...ls.children].map(r => ({ p: partFromText($('.lp', r).value), raw: $('.lp', r).value.trim(), q: parseFloat($('.lq', r).value) })).filter(l => l.raw || l.q);
+      const lines = [...ls.children].map(r => ({ p: partFromText($('.lp', r).value), raw: $('.lp', r).value.trim(), q: parseFloat($('.lq', r).value), po: $('.lpo', r).value.trim() })).filter(l => l.raw || l.q);
       if (!lines.length) { err.textContent = 'Isi minimal satu baris spare part.'; return; }
       for (const l of lines) { if (!l.p) { err.textContent = `Part “${l.raw}” tidak ditemukan. Pilih dari daftar yang muncul.`; return; } if (!(l.q > 0)) { err.textContent = `Qty untuk ${l.p.partNo} harus lebih dari 0.`; return; } }
       const sum = new Map(); for (const l of lines) sum.set(l.p.id, (sum.get(l.p.id) || 0) + l.q);
@@ -976,10 +976,10 @@ function openTx(dir, preset = {}) {
       const v = Object.fromEntries(new FormData(f)); const party = (v.party || '').trim();
       if (closedSet.has((v.date || '').slice(0, 7))) { err.textContent = lockMsg(v.date); return; }
       const pl = (dir === 'in' ? S.suppliers : S.customers).find(x => x.name.toLowerCase() === party.toLowerCase());
-      const po = findPO();
+      const findPOref = r => { const k = (r || '').trim().toLowerCase(); return k ? S.pos.find(p => p.poNo.toLowerCase() === k && p.status !== 'batal') : null; };
       b.disabled = true;
       const ok = await guarded(async () => {
-        for (const l of lines) await db.collection('movements').add({ docNo: (v.docNo.trim() === SOLD_PRE() ? '' : v.docNo.trim()), date: v.date, partId: l.p.id, qty: l.q, dir, kind: v.kind, party, partyId: pl ? pl.id : '', poRef: (v.poRef || '').trim(), poId: po ? po.id : '', ekspedisi: (v.ekspedisi || '').trim(), awb: (v.awb || '').trim(), note: (v.note || '').trim(), by: uid, at: nowISO() });
+        for (const l of lines) { const ref = (l.po || v.poRef || '').trim(), po = findPOref(ref); await db.collection('movements').add({ docNo: (v.docNo.trim() === SOLD_PRE() ? '' : v.docNo.trim()), date: v.date, partId: l.p.id, qty: l.q, dir, kind: v.kind, party, partyId: pl ? pl.id : '', poRef: ref, poId: po ? po.id : '', ekspedisi: (v.ekspedisi || '').trim(), awb: (v.awb || '').trim(), note: (v.note || '').trim(), by: uid, at: nowISO() }); }
       });
       if (ok) { m.close(); toast(`${lines.length} baris tersimpan`); } else b.disabled = false;
     }
