@@ -2625,7 +2625,7 @@ function soForm(preset = {}) {
     ${fld('Periode SO *', 'period', { val: preset.period || defPer, list: 'solist', attrs: 'required' })}${fld('Tanggal', 'date', { type: 'date', val: today(), attrs: 'required' })}
   </div><datalist id="solist">${[...new Set(S.sorders.map(l => l.period))].map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>
   <div class="lines so"><div class="lh"><span>Part number</span><span class="c">Req qty</span><span class="c">Movement</span><span class="c">Stok</span><span class="c">Saran</span><span></span></div><div id="ls"></div>
-  <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button></div></div></form>
+  <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm" data-x="paste">📋 Tempel dari Excel</button></div></div></form>
   <p class="mut" style="font-size:12px">Saat barang tiba, catat di Barang Masuk dengan kolom <b>PO CUST/REQ</b> diisi sama persis dengan Periode SO ini; status akan menjadi SEBAGIAN/DONE otomatis.</p>
   <div class="err" id="serr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan</button></div>`, { wide: true });
   const el = m.el, ls = $('#ls', el), A = analysisNow();
@@ -2636,6 +2636,11 @@ function soForm(preset = {}) {
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
     if (x === 'c') m.close(); if (x === 'addl') addLine();
+    if (x === 'paste') pasteTable(pl => {
+      for (const r of [...ls.children]) if (!$('.lp', r).value.trim() && !$('.lq', r).value) r.remove();
+      const have = new Map([...ls.children].map(r => [partFromText($('.lp', r).value)?.id, r]));
+      for (const l of pl) { const ex = have.get(l.partId); if (ex) $('.lq', ex).value = (parseFloat($('.lq', ex).value) || 0) + l.qty; else addLine(l.partId, l.qty); }
+    });
     if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); }
     if (x === 's') {
       const err = $('#serr', el); err.textContent = ''; const f = $('#sf', el); if (!f.reportValidity()) return;
