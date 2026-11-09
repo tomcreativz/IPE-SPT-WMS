@@ -2342,17 +2342,31 @@ function parsePasted(text) {
 function pasteTable(onApply) {
   const m = modal(`<h3>Tempel tabel dari SAP</h3>
   <p class="mut" style="margin:0 0 8px;font-size:13px">Salin tabel dari SAP/Excel (minimal kolom <b>part number</b> dan <b>qty</b>), lalu tempel (Ctrl+V) di kotak ini. Baris judul kolom boleh ikut disalin. Part yang sama dijumlahkan otomatis.</p>
+  <label style="display:flex;gap:8px;align-items:center;margin:0 0 8px;font-size:13px"><input type="checkbox" id="p2" style="width:18px;height:18px"> <b>Kolom part number &amp; qty terpisah</b> <span class="mut">(tidak bersebelahan di Excel)</span></label>
   <textarea id="pt" rows="7" placeholder="Tempel di sini…" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"></textarea>
+  <div id="p2box" hidden><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div><div class="mut" style="font-size:12px;margin-bottom:4px">1. Tempel kolom <b>PART NUMBER</b></div><textarea id="pa" rows="7" placeholder="Salin kolom part number dari Excel, tempel di sini" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"></textarea></div>
+    <div><div class="mut" style="font-size:12px;margin-bottom:4px">2. Tempel kolom <b>REQ QTY</b></div><textarea id="pb" rows="7" placeholder="Salin kolom qty dari Excel, tempel di sini" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"></textarea></div></div>
+    <div class="mut" id="p2n" style="font-size:12.5px;margin-top:6px">Kedua kolom harus dimulai dari baris yang sama (judul kolom boleh ikut disalin di keduanya).</div></div>
   <div id="ppv" style="margin-top:10px"></div>
   ${canWrite ? '<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px"><input type="checkbox" id="pnew" checked style="width:18px;height:18px"> Buat spare part baru untuk part yang belum terdaftar</label>' : ''}
   <div class="err" id="perr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="go" disabled>Masukkan ke daftar</button></div>`, { wide: true });
   const el = m.el; let P = { rows: [], bad: [] };
   const draw = () => {
-    P = parsePasted($('#pt', el).value); const nNew = P.rows.filter(r => !r.part).length;
+    const two = $('#p2', el).checked; $('#pt', el).hidden = two; $('#p2box', el).hidden = !two;
+    let txt = $('#pt', el).value;
+    if (two) {
+      const A = $('#pa', el).value.replace(/\r/g, '').split('\n'), B = $('#pb', el).value.replace(/\r/g, '').split('\n');
+      while (A.length && !A[A.length - 1].trim()) A.pop(); while (B.length && !B[B.length - 1].trim()) B.pop();
+      const n = Math.max(A.length, B.length), ca = A.filter(x => x.trim()).length, cb = B.filter(x => x.trim()).length;
+      $('#p2n', el).innerHTML = (A.length || B.length) && ca !== cb ? `<span style="color:#b91c1c"><b>Jumlah baris berbeda:</b> part ${ca}, qty ${cb}. Pastikan keduanya disalin dari baris awal dan akhir yang sama.</span>` : (ca ? `${ca} baris part dan ${cb} baris qty terbaca.` : 'Kedua kolom harus dimulai dari baris yang sama (judul kolom boleh ikut disalin di keduanya).');
+      txt = Array.from({ length: n }, (_, i) => ((A[i] || '').trim() || (B[i] || '').trim()) ? (A[i] || '').trim() + '\t' + (B[i] || '').trim() : '').filter(Boolean).join('\n');
+    }
+    P = parsePasted(txt); const nNew = P.rows.filter(r => !r.part).length;
     $('#ppv', el).innerHTML = P.rows.length ? `<div class="tw" style="max-height:260px"><table><thead><tr><th>No</th><th>Part Number</th><th>Deskripsi</th><th class="n">Qty</th><th>Status</th></tr></thead><tbody>${P.rows.map((r, i) => `<tr><td class="mut">${i + 1}</td><td class="mono" style="white-space:nowrap"><b>${esc(r.part ? r.part.partNo : r.raw)}</b></td><td>${esc(r.part ? r.part.name : r.desc)}</td><td class="n"><b>${fmtN(r.qty)}</b></td><td>${r.part ? '<span class="chip ok">Terdaftar</span>' : '<span class="chip warn">Part baru</span>'}</td></tr>`).join('')}</tbody></table></div><div class="mut" style="font-size:12.5px;margin-top:6px">${P.rows.length} part · ${fmtN(P.rows.reduce((s, r) => s + r.qty, 0))} pcs${nNew ? ` · ${nNew} belum terdaftar` : ''}${P.bad.length ? ` · <b style="color:#b45309">${P.bad.length} baris tidak terbaca dan dilewati</b>` : ''}</div>` : ($('#pt', el).value.trim() ? '<div class="err">Tidak ada baris yang bisa dibaca. Pastikan ada kolom part number dan qty.</div>' : '');
     $('[data-x=go]', el).disabled = !P.rows.length;
   };
-  el.addEventListener('input', e => { if (e.target.id === 'pt') draw(); });
+  el.addEventListener('input', e => { if (['pt', 'pa', 'pb', 'p2'].includes(e.target.id)) draw(); });
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') m.close();
     if (b.dataset.x === 'go') {
