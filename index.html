@@ -105,7 +105,7 @@ td.act{white-space:nowrap;text-align:right}
 .kc-info table{width:auto}.kc-info td{padding:2px 14px 2px 0;border:0;font-size:15px;color:#444}.kc-info td.v{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:#111;font-size:15px}
 .kc-logo{width:285px;border-left:2px solid #d9d6cf;display:flex;flex-direction:column;justify-content:center;padding:0 20px}.kc-logo .w{display:flex;align-items:center;gap:6px;font-weight:800;font-size:30px;letter-spacing:.5px;color:#1b2a4a}.kc-logo .w i{width:15px;height:15px;border-radius:50%;background:#111;display:inline-block}.kc-logo .w .y{color:#f5c400}.kc-logo small{font-size:10px;letter-spacing:2px;font-weight:700;color:#1b2a4a;margin-top:6px;max-width:170px}
 .kc-sum{display:flex;gap:14px;padding:18px 20px;background:#f7f5f1;border-bottom:1px solid #e5e2da;flex-wrap:wrap}.kc-sum>div{background:#fff;border:1px solid #dcd8cf;border-radius:8px;padding:10px 24px;text-align:center;min-width:130px}.kc-sum small{display:block;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#6b6b6b;font-weight:700}.kc-sum b{font-size:30px;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700}.kc-sum b.fin{color:#1b2a4a}
-.kc-tw{overflow:auto;max-height:68vh}table.kt{width:100%;border-collapse:collapse}table.kt th{background:#1b2a4a;color:#fff;font-size:12.5px;letter-spacing:1.5px;padding:15px 20px;position:sticky;top:0;border-right:1px solid #33456f}table.kt td{padding:14px 20px;border-bottom:1px solid #e3e0d8;border-right:1px solid #e3e0d8;font-size:16px}table.kt tbody tr:nth-child(even){background:#f7f5f1}table.kt td.d,table.kt td.rm{font-family:ui-monospace,Menlo,Consolas,monospace;color:#555;font-size:15px}table.kt td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;text-align:center}table.kt th.n{text-align:center}table.kt td.s{color:#1b2a4a}table.kt .z{color:#c9c6bd;font-weight:400}
+.kc-tw{overflow:auto;max-height:68vh}table.kt{width:100%;border-collapse:collapse}table.kt td,table.kt th{border-right:1px solid #e3e0d8}table.kt th{border-right-color:#3a4a6b}table.kt td:last-child,table.kt th:last-child{border-right:0}table.kt th{background:#1b2a4a;color:#fff;font-size:12.5px;letter-spacing:1.5px;padding:15px 20px;position:sticky;top:0;border-right:1px solid #33456f}table.kt td{padding:14px 20px;border-bottom:1px solid #e3e0d8;border-right:1px solid #e3e0d8;font-size:16px}table.kt tbody tr:nth-child(even){background:#f7f5f1}table.kt td.d,table.kt td.rm{font-family:ui-monospace,Menlo,Consolas,monospace;color:#555;font-size:15px}table.kt td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;text-align:center}table.kt th.n{text-align:center}table.kt td.s{color:#1b2a4a}table.kt .z{color:#c9c6bd;font-weight:400}
 @media(max-width:720px){.kc-logo{display:none}.kc-sum>div{flex:1;min-width:90px;padding:8px}.kc-sum b{font-size:22px}table.kt td,table.kt th{padding:10px 10px;font-size:13px}}
 
 table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-overflow:ellipsis}table.pt td.nw,table.pt th{white-space:nowrap}table.pt td.nm{white-space:normal;line-height:1.35}
@@ -1844,6 +1844,11 @@ function kartuPDF(p, rows) {
       if (r.o) doc.setTextColor(185, 28, 28).text(fmtN(r.o), xs[4] + cw[4] * wsc - 1.2, by, { align: 'right' }); else doc.setTextColor(190).text('-', xs[4] + cw[4] * wsc - 1.2, by, { align: 'right' });
       doc.setTextColor(...NAVY).text(fmtN(r.bal), xs[5] + cw[5] * wsc - 1.2, by, { align: 'right' });
     });
+    const bot = ty + 5 + Math.max(chunk.length, 1) * RH;
+    doc.setDrawColor(205).setLineWidth(0.12);
+    for (let k = 1; k < 6; k++) doc.line(xs[k], ty + 5, xs[k], bot);
+    doc.line(x + 3, ty + 5, x + 3, bot); doc.line(x + PW - 3, ty + 5, x + PW - 3, bot);
+    doc.setDrawColor(95, 110, 145).setLineWidth(0.12); for (let k = 1; k < 6; k++) doc.line(xs[k], ty + 0.8, xs[k], ty + 4.2);
     doc.setDrawColor(225).setLineWidth(0.15).line(x + 3, ty + 5 + Math.max(chunk.length, 1) * RH, x + PW - 3, ty + 5 + Math.max(chunk.length, 1) * RH);
   };
   for (let pg = 0; pg < pages; pg++) {
