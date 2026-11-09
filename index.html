@@ -110,7 +110,7 @@ td.act{white-space:nowrap;text-align:right}
 .kc-tw{overflow:auto;max-height:68vh}table.kt{width:100%;border-collapse:collapse}table.kt td,table.kt th{border-right:1px solid #e3e0d8}table.kt th{border-right-color:#3a4a6b}table.kt td:last-child,table.kt th:last-child{border-right:0}table.kt th{background:#1b2a4a;color:#fff;font-size:12.5px;letter-spacing:1.5px;padding:15px 20px;position:sticky;top:0;border-right:1px solid #33456f}table.kt td{padding:14px 20px;border-bottom:1px solid #e3e0d8;border-right:1px solid #e3e0d8;font-size:16px}table.kt tbody tr:nth-child(even){background:#f7f5f1}table.kt td.d,table.kt td.rm{font-family:ui-monospace,Menlo,Consolas,monospace;color:#555;font-size:15px}table.kt td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;text-align:center}table.kt th.n{text-align:center}table.kt td.s{color:#1b2a4a}table.kt .z{color:#c9c6bd;font-weight:400}
 @media(max-width:720px){.kc-logo{display:none}.kc-sum>div{flex:1;min-width:90px;padding:8px}.kc-sum b{font-size:22px}table.kt td,table.kt th{padding:10px 10px;font-size:13px}}
 
-table.pt{table-layout:fixed;min-width:980px}table.pt td{overflow:hidden;text-overflow:ellipsis}table.pt td.nw,table.pt th{white-space:nowrap}table.pt td.nm{white-space:normal;line-height:1.35}
+table.pt{table-layout:fixed;min-width:1100px}table.pt td{overflow:hidden;text-overflow:ellipsis}table.pt td.n{white-space:nowrap}table.pt td.act{overflow:visible;text-overflow:clip;text-align:right}table.pt td.nw,table.pt th{white-space:nowrap}table.pt td.nm{white-space:normal;line-height:1.35}
 .mut{color:var(--mut)}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
 .chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600}
@@ -699,22 +699,28 @@ function viewParts() {
       <input type="search" id="q" placeholder="Cari no. part, nama, model, lokasi…" value="${esc(F.parts.q)}">
       <select id="cat"></select>
       <select id="st"><option value="">Semua status</option><option value="Aman">Aman</option><option value="Menipis">Menipis</option><option value="Habis">Habis</option></select>
-      <span class="grow"></span>
+      <span id="bk"></span><span class="grow"></span>
       <button class="btn" data-act="csv">Export CSV</button>
       ${canWrite ? '<button class="btn" data-act="import">Impor CSV</button><button class="btn" data-act="xl">Impor Excel SOH</button><button class="btn" data-act="xk">Impor Kartu Stok</button><button class="btn" data-act="xu">Perbarui Harga/Model dari SOH</button><button class="btn primary" data-act="add">+ Spare Part</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
     bind() { $('#st').value = F.parts.st; },
     input(e) {
+      const sel = (F.parts.sel = F.parts.sel || new Set());
+      if (e.target.id === 'selall') { for (const x of rows) { if (e.target.checked) sel.add(x.id); else sel.delete(x.id); } this.fill(); return; }
+      if (e.target.dataset.sel) { if (e.target.checked) sel.add(e.target.dataset.sel); else sel.delete(e.target.dataset.sel); this.fill(); return; }
       if (e.target.id === 'q') F.parts.q = e.target.value;
       if (e.target.id === 'cat') F.parts.cat = e.target.value;
       if (e.target.id === 'st') F.parts.st = e.target.value;
       this.fill();
     },
     act(a, id) {
+      const sel = (F.parts.sel = F.parts.sel || new Set()), ids = [...sel].filter(i => S.parts.some(x => x.id === i));
       if (a === 'add') partForm();
-      if (a === 'edit') partForm(id);
-      if (a === 'del') delPart(id);
+      if (a === 'edit') partForm(id || ids[0]);
+      if (a === 'del') delPart(id || ids[0]);
+      if (a === 'bulk') bulkParts(ids, () => { sel.clear(); this.fill(); });
+      if (a === 'clrsel') { sel.clear(); this.fill(); }
       if (a === 'kartu') { F.kartu.part = id; location.hash = '#kartu-stok'; }
       if (a === 'import') importParts();
       if (a === 'xl') importExcel();
@@ -724,12 +730,38 @@ function viewParts() {
     },
     fill() {
       const cs = [...new Set(S.parts.map(p => p.category).filter(Boolean))].sort(byText);
-      const sel = $('#cat'); if (sel) { sel.hidden = !cs.length; sel.innerHTML = '<option value="">Semua kategori</option>' + cs.map(c => `<option ${c === F.parts.cat ? 'selected' : ''}>${esc(c)}</option>`).join(''); }
+      const cse = $('#cat'); if (cse) { cse.hidden = !cs.length; cse.innerHTML = '<option value="">Semua kategori</option>' + cs.map(c => `<option ${c === F.parts.cat ? 'selected' : ''}>${esc(c)}</option>`).join(''); }
       const q = F.parts.q.toLowerCase();
       rows = S.parts.filter(p => (!q || [p.partNo, p.name, p.model, p.location, p.category].join(' ').toLowerCase().includes(q)) && (!F.parts.cat || p.category === F.parts.cat) && (!F.parts.st || partStatus(p).k === F.parts.st)).sort((a, b) => byText(a.partNo, b.partNo));
-      $('#tbl').innerHTML = rows.length ? `<table class="pt"><colgroup><col style="width:15%"><col style="width:29%"><col style="width:11%"><col style="width:11%"><col style="width:8%"><col style="width:6%"><col style="width:10%"><col style="width:8%"><col style="width:12%"></colgroup><thead><tr><th>No. Part</th><th>Nama</th><th>Model</th><th>Lokasi</th><th class="n">Stok</th><th class="n">Min</th><th class="n">Harga</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const s = partStatus(p); return `<tr><td class="mono nw"><b>${esc(p.partNo)}</b></td><td class="nm">${esc(p.name)}<div class="mut" style="font-size:12px">${esc(suppMap.get(p.supplierId)?.name || '')}</div></td><td title="${esc(p.model)}">${esc(p.model)}</td><td class="nw">${esc(p.location)}</td><td class="n nw"><b>${fmtN(stock(p.id))}</b> <span class="mut">${esc(p.unit)}</span></td><td class="n">${fmtN(minOf(p))}</td><td class="n nw">${fmtRp(p.price)}</td><td class="nw"><span class="chip ${s.c}">${s.k}</span></td><td class="act nw"><button class="btn sm ghost" data-act="kartu" data-id="${p.id}">Kartu stok</button>${canWrite ? `<button class="btn sm" data-act="edit" data-id="${p.id}">Edit</button>` : ''}${isFull ? `<button class="btn sm" data-act="del" data-id="${p.id}">Hapus</button>` : ''}</td></tr>`; }).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada spare part yang cocok dengan filter.' : (loaded.parts ? 'Belum ada spare part. Klik “+ Spare Part” atau “Impor CSV”.' : 'Memuat…'));
+      const sel = (F.parts.sel = F.parts.sel || new Set()); for (const i of [...sel]) if (!S.parts.some(x => x.id === i)) sel.delete(i);
+      const bk = $('#bk'); if (bk) bk.innerHTML = canWrite && sel.size ? (sel.size === 1 ? `<button class="btn primary" data-act="edit">Edit</button>${isFull ? '<button class="btn" data-act="del">Hapus</button>' : ''}` : `<button class="btn primary" data-act="bulk">Ubah Massal (${sel.size})</button>`) + `<button class="btn" data-act="clrsel">Batal pilih (${sel.size})</button>` : '';
+      $('#tbl').innerHTML = rows.length ? `<table class="pt"><colgroup><col style="width:3%"><col style="width:13%"><col style="width:22%"><col style="width:9%"><col style="width:10%"><col style="width:8%"><col style="width:5%"><col style="width:13%"><col style="width:8%"><col style="width:9%"></colgroup><thead><tr>${canWrite ? `<th style="width:36px"><input type="checkbox" id="selall" ${rows.length && rows.every(x => sel.has(x.id)) ? 'checked' : ''} title="Pilih semua yang tampil" style="width:18px;height:18px"></th>` : '<th></th>'}<th>No. Part</th><th>Nama</th><th>Model</th><th>Lokasi</th><th class="n">Stok</th><th class="n">Min</th><th class="n">Harga</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const s = partStatus(p); return `<tr ${sel.has(p.id) ? 'style="background:#fff8e1"' : ''}>${canWrite ? `<td><input type="checkbox" data-sel="${p.id}" ${sel.has(p.id) ? 'checked' : ''} style="width:18px;height:18px"></td>` : '<td></td>'}<td class="mono nw"><b>${esc(p.partNo)}</b></td><td class="nm">${esc(p.name)}<div class="mut" style="font-size:12px">${esc(suppMap.get(p.supplierId)?.name || '')}</div></td><td title="${esc(p.model)}">${esc(p.model)}</td><td class="nw">${esc(p.location)}</td><td class="n nw"><b>${fmtN(stock(p.id))}</b> <span class="mut">${esc(p.unit)}</span></td><td class="n">${fmtN(minOf(p))}</td><td class="n nw">${fmtRp(p.price)}</td><td class="nw"><span class="chip ${s.c}">${s.k}</span></td><td class="act nw"><button class="btn sm ghost" data-act="kartu" data-id="${p.id}">Kartu stok</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.parts.length ? 'Tidak ada spare part yang cocok dengan filter.' : (loaded.parts ? 'Belum ada spare part. Klik “+ Spare Part” atau “Impor CSV”.' : 'Memuat…'));
     }
   };
+}
+function bulkParts(ids, done) {
+  if (!canWrite) return denied();
+  const ps = ids.map(i => S.parts.find(x => x.id === i)).filter(Boolean);
+  if (ps.length < 1) { toast('Pilih minimal satu spare part.', 'err'); return; }
+  const cats = [...new Set(S.parts.map(p => p.category).filter(Boolean))].sort(byText), mods = [...new Set(S.parts.map(p => p.model).filter(Boolean))].sort(byText);
+  const row = (label, name, o = {}) => `<div class="f"><span>${label}</span><div style="display:flex;gap:8px;align-items:center"><input name="${name}" ${o.type ? `type="${o.type}"` : ''} ${o.list ? `list="${o.list}"` : ''} ${o.type === 'number' ? 'min="0" step="any"' : ''} placeholder="(kosong = tidak diubah)" style="flex:1"><label class="mut" style="white-space:nowrap;font-size:12px"><input type="checkbox" name="clr_${name}"> kosongkan</label></div></div>`;
+  const m = modal(`<h3>Ubah Massal ${ps.length} Spare Part</h3>
+  <details style="margin-bottom:10px"><summary class="mut" style="cursor:pointer;font-size:13px">Lihat part yang dipilih</summary><div class="mut" style="font-size:12.5px;max-height:120px;overflow:auto;margin-top:6px">${ps.map(p => `${esc(p.partNo)} · ${esc(p.name)}`).join('<br>')}</div></details>
+  <p class="mut" style="margin:0 0 10px;font-size:13px">Isi hanya kolom yang ingin disamakan, misalnya lokasi bin yang sama. Kolom yang dibiarkan kosong tidak diubah. Centang <b>kosongkan</b> untuk menghapus isi kolom itu pada semua part terpilih.</p>
+  <form id="bf">${row('Lokasi rak / bin', 'location')}${row('Model / aplikasi', 'model', { list: 'bml' })}${row('Kategori', 'category', { list: 'bcl' })}${row('Satuan', 'unit')}${row('Harga jual (Rp)', 'price', { type: 'number' })}
+  <div class="f"><span>Supplier</span><select name="supplierId"><option value="">(tidak diubah)</option>${S.suppliers.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></div>
+  <datalist id="bml">${mods.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist><datalist id="bcl">${cats.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></form>
+  <div class="err" id="berr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Terapkan ke ${ps.length} part</button></div>`);
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') return m.close();
+    const f = $('#bf', m.el), patch = {};
+    for (const k of ['location', 'model', 'category', 'unit', 'price']) { const inp = f.elements[k]; if (f.elements['clr_' + k].checked) patch[k] = k === 'price' ? 0 : ''; else if (inp.value.trim()) patch[k] = k === 'price' ? (+inp.value || 0) : inp.value.trim(); }
+    if (f.elements.supplierId.value) patch.supplierId = f.elements.supplierId.value;
+    if (!Object.keys(patch).length) { $('#berr', m.el).textContent = 'Isi minimal satu kolom yang ingin diubah.'; return; }
+    b.disabled = true; let n = 0;
+    const ok = await guarded(async () => { for (let i = 0; i < ps.length; i += 10) { await Promise.all(ps.slice(i, i + 10).map(p => db.doc('parts/' + p.id).update({ ...patch, updatedAt: nowISO() }))); n = Math.min(ps.length, i + 10); b.textContent = `Menyimpan ${n}/${ps.length}…`; } });
+    if (ok) { m.close(); toast(`${ps.length} spare part diperbarui`); done && done(); } else { b.disabled = false; b.textContent = 'Coba lagi'; }
+  });
 }
 function partForm(id) {
   if (!canWrite) return denied();
