@@ -132,9 +132,10 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .pkr.done{opacity:.5;background:#ecfdf3;border-left-color:#16a34a}.pkr.done .cb{background:#16a34a;border-color:#16a34a}.pkr.done .pn,.pkr.done .ds{text-decoration:line-through}
 .pkr .mid{grid-column:2}
 .pkr.put .mid{display:flex;flex-direction:column}.pkr.put .pn{order:-1;font-size:20px;font-weight:800;line-height:1.15}.pkr.put .bin{order:1;font-size:17px;font-weight:800;margin-top:4px;color:#374151;min-width:0}.pkr.put .bin small{display:inline;margin-left:6px}.pkr.put .ds{order:2}
-.pk-act{position:sticky;bottom:0;background:#fff;padding-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.pk-grp{position:sticky;top:0;z-index:2;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;background:#1f2229;color:#fff;border-radius:10px;padding:9px 12px;margin:14px 0 8px;font-size:13px}.pk-grp:first-child{margin-top:4px}.pk-grp b{font-size:15px;color:var(--y)}.pk-grp span{color:#c9ced8;flex:1;min-width:0}.pk-grp em{font-style:normal;font-weight:600;font-size:12px;color:#c9ced8}
+.pk-act{position:sticky;bottom:-20px;background:#fff;padding:10px 0 20px;display:flex;gap:8px;flex-wrap:wrap}
 .pk-act .btn{flex:1 1 130px;min-width:0;padding:12px 10px;white-space:normal;display:flex;align-items:center;justify-content:center;min-height:50px}
-@media(max-width:600px){.ov:has(.pkm){padding:0}.modal.pkm{border-radius:0;min-height:100%;max-width:none;padding:14px}}
+@media(max-width:600px){.ov:has(.pkm){padding:0}.pkm .pk-act{bottom:-14px;padding-bottom:14px}.modal.pkm{border-radius:0;min-height:100%;max-width:none;padding:14px}}
 .ov{position:fixed;inset:0;background:rgba(15,17,22,.5);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px;overflow:auto;z-index:50}
 .modal{background:#fff;border-radius:12px;padding:20px;width:100%;max-width:560px;box-shadow:0 20px 50px rgba(0,0,0,.3)}
 .modal.wide{max-width:860px}
@@ -2395,10 +2396,11 @@ function pickRows(items, g2) {
   }
   return [...mp.values()].sort((a, b) => binCmp(a.bin, b.bin) || a.partNo.localeCompare(b.partNo, 'en', { numeric: true }));
 }
+function pickGroups(items, g2) { return items.map(it => ({ po: it.po, c: it.c, rows: pickRows([it], g2).map(r => ({ ...r, poNo: it.po.poNo })) })); }
 function pickSelect() {
   const el0 = S.pos.map(po => ({ po, inf: poInfo(po), c: custMap.get(po.customerId) })).filter(x => x.inf.open && !x.inf.short && !x.po.picked && x.inf.lines.some(l => l.sisa > 0)).sort((a, b) => (a.po.date + a.po.poNo).localeCompare(b.po.date + b.po.poNo));
   if (!el0.length) { toast('Tidak ada PO lengkap yang belum dipicking.', 'err'); return; }
-  const m = modal(`<h3>Picking Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih PO lengkap yang akan disiapkan sekaligus. Barang digabung dan diurutkan menurut lokasi bin.</p>
+  const m = modal(`<h3>Picking Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih PO lengkap yang akan disiapkan sekaligus. Daftar dikelompokkan per PO, di dalam tiap PO diurutkan menurut lokasi bin.</p>
   <label style="display:flex;gap:10px;align-items:center;padding:8px 4px;font-weight:700"><input type="checkbox" id="pall" checked style="width:20px;height:20px"> Pilih semua (${el0.length} PO)</label>
   <div id="pols">${el0.map((x, i) => `<label style="display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" value="${i}" checked style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b><br><span class="mut" style="font-size:12.5px">${esc(x.c?.name || '')}${x.po.plant ? ' · ' + esc(x.po.plant) : ''}</span></span><span class="mut">${x.inf.lines.filter(l => l.sisa > 0).length} item</span></label>`).join('')}</div>
   <div class="err" id="perr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="go">Mulai picking</button></div>`);
@@ -2424,11 +2426,11 @@ function openPicking(items) {
     <label class="f" style="margin-top:8px"><span>Awalan bin yang termasuk Gudang 2 (pisahkan koma)</span><input id="g2" placeholder="mis. D, C, H, I, N, M, VALET GG2" value="${esc(getG2())}"></label></details>
   <div class="pk-act">${canWrite ? (allPicked() ? `<button class="btn" data-x="unmark">Batal tandai${multi ? ' ' + items.length + ' PO' : ' PO'}</button>` : `<button class="btn" data-x="mark">✓ Tandai ${multi ? items.length + ' PO' : 'PO'} dipicking</button>`) : ''}<button class="btn" data-x="sapp">Salin Part</button><button class="btn" data-x="sapq">Salin Qty</button><button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('pkm');
-  const el = m.el, rowsNow = () => pickRows(items, $('#g2', el).value), keyOf = r => r.partNo + '|' + r.bin;
+  const el = m.el, groupsNow = () => multi ? pickGroups(items, $('#g2', el).value) : [{ rows: pickRows(items, $('#g2', el).value) }], rowsNow = () => groupsNow().flatMap(g => g.rows), keyOf = r => (r.poNo ? r.poNo + '|' : '') + r.partNo + '|' + r.bin;
   const draw = () => {
-    const rows = rowsNow(), n = rows.filter(r => done.has(keyOf(r))).length, q = rows.reduce((s, r) => s + r.qty, 0), qd = rows.filter(r => done.has(keyOf(r))).reduce((s, r) => s + r.qty, 0);
+    const groups = groupsNow(), rows = groups.flatMap(g => g.rows), n = rows.filter(r => done.has(keyOf(r))).length, q = rows.reduce((s, r) => s + r.qty, 0), qd = rows.filter(r => done.has(keyOf(r))).reduce((s, r) => s + r.qty, 0);
     $('#pkc', el).textContent = `${n} / ${rows.length} diambil`; $('#pkq', el).textContent = `${fmtN(qd)} / ${fmtN(q)} pcs`; $('#pkb', el).style.width = (rows.length ? n / rows.length * 100 : 0) + '%';
-    $('#pv', el).innerHTML = rows.map(r => `<div class="pkr ${r.g2 ? 'g2' : ''} ${done.has(keyOf(r)) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${done.has(keyOf(r)) ? '✓' : ''}</div><div class="mid"><div class="bin">${esc(r.bin || '-')}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}${r.req ? ' · ' + esc(r.req) : ''}</div>${multi ? `<div class="ds" style="font-size:12px;margin-top:3px">${r.refs.map(x => `<span class="chip gray" style="margin:0 4px 2px 0">${esc(x.poNo)} × ${fmtN(x.qty)}</span>`).join('')}</div>` : ''}</div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
+    $('#pv', el).innerHTML = groups.map(g => (multi ? `<div class="pk-grp"><b>PO ${esc(g.po.poNo)}</b><span>${esc(g.c?.name || '')}${g.po.plant ? ' · ' + esc(g.po.plant) : ''}</span><em>${fmtN(g.rows.filter(r => done.has(keyOf(r))).length)} / ${fmtN(g.rows.length)} item</em></div>` : '') + g.rows.map(r => `<div class="pkr ${r.g2 ? 'g2' : ''} ${done.has(keyOf(r)) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${done.has(keyOf(r)) ? '✓' : ''}</div><div class="mid"><div class="bin">${esc(r.bin || '-')}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}${r.req ? ' · ' + esc(r.req) : ''}</div></div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('')).join('');
   };
   draw(); el.addEventListener('input', e => { if (e.target.id === 'g2') draw(); });
   el.addEventListener('click', e => { const r = e.target.closest('.pkr'); if (!r) return; const k = r.dataset.k; if (done.has(k)) done.delete(k); else done.add(k); saveDone(); draw(); });
@@ -2440,17 +2442,21 @@ function openPicking(items) {
     if (b.dataset.x === 'reset') { done = new Set(); saveDone(); draw(); }
     if (b.dataset.x === 'dl') {
       const g2 = $('#g2', el).value; await saveG2(g2.trim());
-      const rows = pickRows(items, g2), doc = pdfDoc('PICKING LIST' + (multi ? ' GABUNGAN' : ''), multi ? items.length + ' PO' : 'No. PO/QT: ' + pdfSafe(items[0].po.poNo)); if (!doc) return;
+      const groups = multi ? pickGroups(items, g2) : [{ rows: pickRows(items, g2) }], rows = groups.flatMap(g => g.rows), doc = pdfDoc('PICKING LIST' + (multi ? ' GABUNGAN' : ''), multi ? items.length + ' PO' : 'No. PO/QT: ' + pdfSafe(items[0].po.poNo)); if (!doc) return;
       doc.setFontSize(9.5).setFont('helvetica', 'normal');
       if (multi) { doc.text('PO: ' + pdfSafe(items.map(x => x.po.poNo).join(', ')).slice(0, 95), 14, 42); doc.text('Dicetak : ' + fmtD(today()), 14, 47); doc.text('Total item : ' + rows.length + ' baris / ' + fmtN(rows.reduce((s, r) => s + r.qty, 0)) + ' pcs', 110, 47); }
       else { const { po, c } = items[0]; doc.text('Customer   : ' + pdfSafe(c?.name || '-'), 14, 42); doc.text('Plant         : ' + pdfSafe(po.plant || '-'), 14, 47); doc.text('Tanggal PO : ' + fmtD(po.date), 14, 52); doc.text('Dicetak     : ' + fmtD(today()), 130, 42); doc.text('Total item  : ' + rows.length + ' baris / ' + fmtN(rows.reduce((s, r) => s + r.qty, 0)) + ' pcs', 130, 47); }
       doc.setFillColor(255, 224, 178).rect(14, 55, 4, 4, 'F'); doc.setFontSize(8).text('= lokasi bin di Gudang 2', 20, 58.3);
-      const body = rows.map((r, i) => [i + 1, pdfSafe(r.bin || '-'), pdfSafe(r.partNo), pdfSafe(r.name) + (r.req ? ' [' + pdfSafe(r.req) + ']' : ''), fmtN(r.qty), r.g2 ? 'GUDANG 2' : 'Gudang 1', ...(multi ? [pdfSafe(r.refs.map(x => x.poNo + ' x' + fmtN(x.qty)).join(', '))] : []), '']);
-      const ci = multi ? 7 : 6, head = ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty', 'Gudang', ...(multi ? ['PO'] : []), 'Cek'];
+      const body = [], meta = [];
+      for (const g of groups) {
+        if (multi) { body.push([{ content: 'PO ' + pdfSafe(g.po.poNo) + '  |  ' + pdfSafe(g.c?.name || '') + (g.po.plant ? '  |  ' + pdfSafe(g.po.plant) : '') + '  |  ' + g.rows.length + ' item', colSpan: 7, styles: { fillColor: [31, 34, 41], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 } }]); meta.push(null); }
+        g.rows.forEach((r, i) => { body.push([i + 1, pdfSafe(r.bin || '-'), pdfSafe(r.partNo), pdfSafe(r.name) + (r.req ? ' [' + pdfSafe(r.req) + ']' : ''), fmtN(r.qty), r.g2 ? 'GUDANG 2' : 'Gudang 1', '']); meta.push(r); });
+      }
+      const ci = 6, head = ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty', 'Gudang', 'Cek'];
       pdfTable(doc, 62, head, body, {
-        columnStyles: { 0: { cellWidth: 9 }, 1: { cellWidth: 22, fontStyle: 'bold' }, 2: { cellWidth: 30 }, 4: { halign: 'right', cellWidth: 11, fontStyle: 'bold' }, 5: { cellWidth: 23 }, ...(multi ? { 6: { cellWidth: 30, fontSize: 7 } } : {}), [ci]: { cellWidth: 12 } },
-        didParseCell: d => { if (d.section === 'body' && rows[d.row.index]?.g2) { d.cell.styles.fillColor = [255, 224, 178]; if (d.column.index === 5) d.cell.styles.fontStyle = 'bold'; } },
-        didDrawCell: d => { if (d.section === 'body' && d.column.index === ci) { doc.setDrawColor(60).setLineWidth(0.3).rect(d.cell.x + 3, d.cell.y + d.cell.height / 2 - 2, 4, 4); } }
+        columnStyles: { 0: { cellWidth: 9 }, 1: { cellWidth: 22, fontStyle: 'bold' }, 2: { cellWidth: 32 }, 4: { halign: 'right', cellWidth: 12, fontStyle: 'bold' }, 5: { cellWidth: 24 }, [ci]: { cellWidth: 14 } },
+        didParseCell: d => { if (d.section === 'body' && meta[d.row.index]?.g2) { d.cell.styles.fillColor = [255, 224, 178]; if (d.column.index === 5) d.cell.styles.fontStyle = 'bold'; } },
+        didDrawCell: d => { if (d.section === 'body' && d.column.index === ci && meta[d.row.index]) { doc.setDrawColor(60).setLineWidth(0.3).rect(d.cell.x + 3, d.cell.y + d.cell.height / 2 - 2, 4, 4); } }
       });
       saveFile(multi ? `Picking-Gabungan-${today()}.pdf` : `Picking-${pdfSafe(items[0].po.poNo).replace(/[^\w-]+/g, '_')}.pdf`, doc.output('blob'));
     }
