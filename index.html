@@ -240,7 +240,7 @@ let canWrite = false, canPO = false, canCust = false, isFull = false, loadFailed
 let stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
 const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '', sel: new Set() }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '', hide: false, inc: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
-  kartu: { part: '', from: '', to: '' }, cust: { q: '', grp: '' }, supp: { q: '' }, po: { q: '', st: '' } };
+  kartu: { part: '', from: '', to: '' }, cust: { q: '', grp: '' }, supp: { q: '' }, po: { q: '', st: '', sort: '' } };
 
 const IN_TYPES = ['IN', 'RETURN CUSTOMER', 'SALDO AWAL', 'KOREKSI (+)'];
 const OUT_TYPES = ['SOLD CUSTOMER', 'WH03 SERVICE', 'BUNDLING', 'IPE BJM', 'IPE SMD', 'IPE BPP', 'IPE PTK', 'IPE SBY', 'IPE JKT', 'IPE PKY', 'PART DAMAGE', 'PART RETURN', 'FUCHS', 'KOREKSI (-)'];
@@ -2155,9 +2155,10 @@ function viewPO() {
     shell: `${ro(true)}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
       <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipacking', 'Stok kurang', 'Pengajuan batal'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      <select id="posort" title="Urutkan daftar PO"><option value="" ${F.po.sort === '' ? 'selected' : ''}>Urutan: Terbaru</option><option value="old" ${F.po.sort === 'old' ? 'selected' : ''}>Urutan: Terlama</option><option value="hi" ${F.po.sort === 'hi' ? 'selected' : ''}>Urutan: Nilai tertinggi</option><option value="lo" ${F.po.sort === 'lo' ? 'selected' : ''}>Urutan: Nilai terendah</option></select>
       <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="pickall">Picking Gabungan</button>${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
-    input(e) { if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; this.fill(); },
+    input(e) { if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; if (e.target.id === 'posort') F.po.sort = e.target.value; this.fill(); },
     act(a, id) {
       if (a === 'add') poForm();
       if (a === 'pickall') pickSelect();
@@ -2168,7 +2169,8 @@ function viewPO() {
     },
     fill() {
       const q = F.po.q.toLowerCase();
-      rows = S.pos.filter(p => { const i = poInfo(p); return (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipacking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); }).sort((a, b) => (b.date + b.poNo).localeCompare(a.date + a.poNo));
+      rows = S.pos.filter(p => { const i = poInfo(p); return (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipacking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); })
+        .sort((a, b) => { const k = F.po.sort, d = (b.date + b.poNo).localeCompare(a.date + a.poNo); if (k === 'old') return -d; if (k === 'hi') return (poInfo(b).val || 0) - (poInfo(a).val || 0) || d; if (k === 'lo') return (poInfo(a).val || 0) - (poInfo(b).val || 0) || d; return d; });
       $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. PO/QT</th><th>Tgl PO</th><th>Customer</th><th>Plant</th><th class="n">Item</th><th>Progres kirim</th><th>Kesiapan stok</th><th class="n">Nilai</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const i = poInfo(p); const pct = i.ord ? Math.round(i.del / i.ord * 100) : 0; return `<tr><td class="mono"><b>${esc(p.poNo)}</b></td><td>${fmtD(p.date)}</td><td>${esc(custMap.get(p.customerId)?.name || '—')}</td><td>${esc(p.plant || '')}</td><td class="n">${(p.items || []).length}</td><td><div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${fmtN(i.del)}/${fmtN(i.ord)} unit</small></td><td>${!i.open ? '<span class="mut">—</span>' : i.short ? `<span class="chip bad">${i.short} baris KURANG</span>` : p.picked ? '<span class="chip info" title="Dipacking oleh ' + esc(p.picked.by || '') + '">SUDAH DIPACKING</span>' : '<span class="chip ok">LENGKAP</span>'}</td><td class="n">${fmtRp(i.val)}</td><td><span class="chip ${i.st.c}">${i.st.k}</span>${p.cancelReq && p.status !== 'batal' ? ' <span class="chip warn" title="Diajukan oleh ' + esc(p.cancelReq.by || '') + '">MENUNGGU KONFIRMASI BATAL</span>' : ''}</td><td class="act"><button class="btn sm" data-act="view" data-id="${p.id}">Detail</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.pos.length ? 'Tidak ada PO yang cocok.' : (loaded.pos ? 'Belum ada PO customer. Klik “+ PO Customer”.' : 'Memuat…'));
     }
   };
