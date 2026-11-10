@@ -2511,11 +2511,11 @@ function pickGroups(items, g2) { return items.map(it => ({ po: it.po, c: it.c, r
 function pickSelect() {
   const el0 = S.pos.map(po => ({ po, inf: poInfo(po), c: custMap.get(po.customerId) })).filter(x => x.inf.open && !x.inf.short && !x.po.picked && x.inf.lines.some(l => l.sisa > 0)).sort((a, b) => (a.po.date + a.po.poNo).localeCompare(b.po.date + b.po.poNo));
   if (!el0.length) { toast('Tidak ada PO lengkap yang belum dipicking.', 'err'); return; }
-  const gOf = x => (x.c?.group || '').trim() || (x.po.plant || '').trim() || 'Tanpa grup';
+  const gOf = x => (x.po.plant || '').trim().toUpperCase() || (x.c?.group || '').trim() || 'Tanpa grup';
   const grp = new Map(); el0.forEach((x, i) => { const g = gOf(x); if (!grp.has(g)) grp.set(g, []); grp.get(g).push(i); });
   const gKeys = [...grp.keys()].sort((a, b) => (a === 'Tanpa grup') - (b === 'Tanpa grup') || a.localeCompare(b, 'id'));
   const row = (x, i) => `<label class="pk-po"><input type="checkbox" value="${i}" data-g="${esc(gOf(x))}" checked style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b><br><span class="mut" style="font-size:12.5px">${esc(x.c?.name || '')}${x.po.plant ? ' · ' + esc(x.po.plant) : ''}</span></span><span class="mut">${x.inf.lines.filter(l => l.sisa > 0).length} item</span></label>`;
-  const m = modal(`<h3>Picking Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih PO lengkap yang akan disiapkan sekaligus. PO dikelompokkan per grup customer; centang nama grup untuk memilih semua PO di dalamnya. Hasil picking tetap dikelompokkan per PO, di dalam tiap PO diurutkan menurut lokasi bin.</p>
+  const m = modal(`<h3>Picking Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih PO lengkap yang akan disiapkan sekaligus. PO dikelompokkan per grup (kolom Plant/Grup pada PO); centang nama grup untuk memilih semua PO di dalamnya. Hasil picking tetap dikelompokkan per PO, di dalam tiap PO diurutkan menurut lokasi bin.</p>
   <label style="display:flex;gap:10px;align-items:center;padding:8px 4px;font-weight:700"><input type="checkbox" id="pall" checked style="width:20px;height:20px"> Pilih semua (${el0.length} PO)</label>
   <input type="search" id="pfq" placeholder="Cari no. PO / customer / grup…" style="width:100%;margin:0 0 6px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit">
   <div id="pols">${gKeys.map(g => `<div class="pk-gh" data-gh="${esc(g)}"><label><input type="checkbox" class="gck" data-g="${esc(g)}" checked style="width:20px;height:20px"><b>${esc(g)}</b></label><span class="mut">${grp.get(g).length} PO</span></div><div class="pk-gb" data-gb="${esc(g)}">${grp.get(g).map(i => row(el0[i], i)).join('')}</div>`).join('')}</div>
