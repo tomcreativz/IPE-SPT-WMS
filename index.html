@@ -2844,7 +2844,7 @@ const lastUser = () => { try { return localStorage.getItem('wms-user') || ''; } 
 function showLogin(msg) {
   const L = $('#login'); L.hidden = false;
   L.innerHTML = `<form class="box" id="lf"><img src="${$('.brand img')?.src || ''}" alt="" style="width:64px;height:64px;display:block;margin:0 auto 10px"><h2>WMS Gudang Spare Part</h2><p>PT Indonesia Prima Equipment · Cabang Sampit</p>
-    ${fld('Nama pengguna', 'email', { type: 'text', val: lastUser(), ph: 'mis. bustomiyazid101', attrs: 'required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"' })}${fld('Password', 'password', { type: 'password', attrs: 'required autocomplete="current-password"' })}
+    ${fld('Email', 'email', { type: 'text', val: lastUser(), attrs: 'required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"' })}${fld('Password', 'password', { type: 'password', attrs: 'required autocomplete="current-password"' })}
     <div class="err" id="lerr">${esc(msg || '')}</div><button class="btn primary" type="submit">Masuk</button></form>`;
   $('#lf').onsubmit = async e => {
     e.preventDefault(); const v = Object.fromEntries(new FormData(e.target)); const btn = $('button', e.target); btn.disabled = true;
@@ -2853,7 +2853,19 @@ function showLogin(msg) {
     if (error) {
       const m = String(error.message || '');
       let t = 'Gagal masuk: ' + m;
-      if (/invalid login credentials/i.test(m)) t = 'Nama pengguna atau password salah (atau akun belum dibuat di Supabase).';
+      if (/invalid login credentials/i.test(m)) {
+        t = 'Email atau password salah.';
+        const em = toEmail(v.email);
+        if (!String(v.email).trim()) t = 'Email belum diisi.';
+        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) t = 'Format email tidak valid. Contoh: nama@perusahaan.com';
+        else {
+          try {
+            const { data: ada, error: e3 } = await sb.rpc('email_terdaftar', { p_email: em });
+            if (!e3 && ada === false) t = 'Email tidak terdaftar. Periksa penulisan email, atau minta Warehouseman membuatkan akun Anda.';
+            else if (!e3 && ada === true) t = 'Password salah. Periksa huruf besar/kecil dan Caps Lock, lalu coba lagi.';
+          } catch (e4) { }
+        }
+      }
       else if (/not confirmed/i.test(m)) t = 'Email belum dikonfirmasi. Di Supabase: Authentication > Users, buka akun ini lalu konfirmasi, atau buat ulang dengan "Auto Confirm User" dicentang.';
       else if (/api key|apikey|jwt/i.test(m)) t = 'Kunci API di config.js salah. Pakai anon/publishable key dari Project Settings > API.';
       else if (/failed to fetch|network|load failed/i.test(m)) t = 'Tidak bisa menghubungi Supabase. Periksa SUPABASE_URL di config.js dan koneksi internet.';
