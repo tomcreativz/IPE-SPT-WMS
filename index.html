@@ -138,6 +138,8 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .pkr.done{opacity:.5;background:#ecfdf3;border-left-color:#16a34a}.pkr.done .cb{background:#16a34a;border-color:#16a34a}.pkr.done .pn,.pkr.done .ds{text-decoration:line-through}
 .pkr .mid{grid-column:2}
 .pkr.put .mid{display:flex;flex-direction:column}.pkr.put .pn{order:-1;font-size:20px;font-weight:800;line-height:1.15}.pkr.put .bin{order:1;font-size:17px;font-weight:800;margin-top:4px;color:#374151;min-width:0}.pkr.put .bin small{display:inline;margin-left:6px}.pkr.put .ds{order:2}
+.pk-po{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;background:#fff}.pk-po[hidden],.pk-gh[hidden],.pk-gb[hidden]{display:none}
+.pk-gh{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;background:#1f2229;color:#fff;border-radius:10px;padding:8px 12px;margin:12px 0 8px}.pk-gh label{display:flex;gap:10px;align-items:center;cursor:pointer}.pk-gh .mut{color:#cbd0d8}
 .pk-grp{position:sticky;top:0;z-index:2;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;background:#1f2229;color:#fff;border-radius:10px;padding:9px 12px;margin:14px 0 8px;font-size:13px}.pk-grp:first-child{margin-top:4px}.pk-grp b{font-size:15px;color:var(--y)}.pk-grp span{color:#c9ced8;flex:1;min-width:0}.pk-grp em{font-style:normal;font-weight:600;font-size:12px;color:#c9ced8}
 .pk-act{position:sticky;bottom:-20px;background:#fff;padding:10px 0 20px;display:flex;gap:8px;flex-wrap:wrap}
 .pk-act .btn{flex:1 1 130px;min-width:0;padding:12px 10px;white-space:normal;display:flex;align-items:center;justify-content:center;min-height:50px}
@@ -2509,12 +2511,28 @@ function pickGroups(items, g2) { return items.map(it => ({ po: it.po, c: it.c, r
 function pickSelect() {
   const el0 = S.pos.map(po => ({ po, inf: poInfo(po), c: custMap.get(po.customerId) })).filter(x => x.inf.open && !x.inf.short && !x.po.picked && x.inf.lines.some(l => l.sisa > 0)).sort((a, b) => (a.po.date + a.po.poNo).localeCompare(b.po.date + b.po.poNo));
   if (!el0.length) { toast('Tidak ada PO lengkap yang belum dipicking.', 'err'); return; }
-  const m = modal(`<h3>Picking Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih PO lengkap yang akan disiapkan sekaligus. Daftar dikelompokkan per PO, di dalam tiap PO diurutkan menurut lokasi bin.</p>
+  const gOf = x => (x.c?.group || '').trim() || (x.po.plant || '').trim() || 'Tanpa grup';
+  const grp = new Map(); el0.forEach((x, i) => { const g = gOf(x); if (!grp.has(g)) grp.set(g, []); grp.get(g).push(i); });
+  const gKeys = [...grp.keys()].sort((a, b) => (a === 'Tanpa grup') - (b === 'Tanpa grup') || a.localeCompare(b, 'id'));
+  const row = (x, i) => `<label class="pk-po"><input type="checkbox" value="${i}" data-g="${esc(gOf(x))}" checked style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b><br><span class="mut" style="font-size:12.5px">${esc(x.c?.name || '')}${x.po.plant ? ' · ' + esc(x.po.plant) : ''}</span></span><span class="mut">${x.inf.lines.filter(l => l.sisa > 0).length} item</span></label>`;
+  const m = modal(`<h3>Picking Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih PO lengkap yang akan disiapkan sekaligus. PO dikelompokkan per grup customer; centang nama grup untuk memilih semua PO di dalamnya. Hasil picking tetap dikelompokkan per PO, di dalam tiap PO diurutkan menurut lokasi bin.</p>
   <label style="display:flex;gap:10px;align-items:center;padding:8px 4px;font-weight:700"><input type="checkbox" id="pall" checked style="width:20px;height:20px"> Pilih semua (${el0.length} PO)</label>
-  <div id="pols">${el0.map((x, i) => `<label style="display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" value="${i}" checked style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b><br><span class="mut" style="font-size:12.5px">${esc(x.c?.name || '')}${x.po.plant ? ' · ' + esc(x.po.plant) : ''}</span></span><span class="mut">${x.inf.lines.filter(l => l.sisa > 0).length} item</span></label>`).join('')}</div>
+  <input type="search" id="pfq" placeholder="Cari no. PO / customer / grup…" style="width:100%;margin:0 0 6px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit">
+  <div id="pols">${gKeys.map(g => `<div class="pk-gh" data-gh="${esc(g)}"><label><input type="checkbox" class="gck" data-g="${esc(g)}" checked style="width:20px;height:20px"><b>${esc(g)}</b></label><span class="mut">${grp.get(g).length} PO</span></div><div class="pk-gb" data-gb="${esc(g)}">${grp.get(g).map(i => row(el0[i], i)).join('')}</div>`).join('')}</div>
   <div class="err" id="perr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="go">Mulai picking</button></div>`);
-  const el = m.el, boxes = () => [...el.querySelectorAll('#pols input')];
-  el.addEventListener('change', e => { if (e.target.id === 'pall') boxes().forEach(b => b.checked = e.target.checked); else $('#pall', el).checked = boxes().every(b => b.checked); });
+  const el = m.el, boxes = () => [...el.querySelectorAll('#pols input[value]')], gboxes = () => [...el.querySelectorAll('#pols .gck')];
+  const sync = () => { const bs = boxes(); $('#pall', el).checked = bs.every(b => b.checked); for (const g of gboxes()) { const mine = bs.filter(b => b.dataset.g === g.dataset.g), n = mine.filter(b => b.checked).length; g.checked = n === mine.length; g.indeterminate = n > 0 && n < mine.length; } const c = bs.filter(b => b.checked).length; const go = el.querySelector('[data-x=go]'); if (go) go.textContent = `Mulai picking (${c} PO)`; };
+  el.addEventListener('change', e => {
+    if (e.target.id === 'pall') boxes().forEach(b => b.checked = e.target.checked);
+    else if (e.target.classList.contains('gck')) boxes().filter(b => b.dataset.g === e.target.dataset.g).forEach(b => b.checked = e.target.checked);
+    sync();
+  });
+  el.addEventListener('input', e => {
+    if (e.target.id !== 'pfq') return; const q = e.target.value.trim().toLowerCase();
+    for (const b of boxes()) { const x = el0[+b.value], hit = !q || (x.po.poNo + ' ' + (x.c?.name || '') + ' ' + (x.po.plant || '') + ' ' + gOf(x)).toLowerCase().includes(q); b.closest('.pk-po').hidden = !hit; }
+    for (const h of el.querySelectorAll('.pk-gh')) { const body = el.querySelector(`.pk-gb[data-gb="${CSS.escape(h.dataset.gh)}"]`), any = [...body.children].some(c => !c.hidden); h.hidden = body.hidden = !any; }
+  });
+  sync();
   el.addEventListener('click', e => {
     const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') m.close();
     if (b.dataset.x === 'go') { const ch = boxes().filter(x => x.checked).map(x => el0[+x.value]); if (!ch.length) { $('#perr', el).textContent = 'Pilih minimal satu PO.'; return; } m.close(); openPicking(ch); }
