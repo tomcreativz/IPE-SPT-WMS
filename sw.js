@@ -1,7 +1,7 @@
 /* Service worker WMS: agar bisa dipasang sebagai aplikasi dan halaman dasar terbuka cepat.
    Data (Supabase) TIDAK pernah disimpan di cache, selalu diambil langsung dari internet. */
-const CACHE = 'wms-shell-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'wms-shell-v2';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './lib/supabase.js', './lib/xlsx.bundle.js', './lib/jspdf.umd.min.js', './lib/jspdf.plugin.autotable.min.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => { })); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
