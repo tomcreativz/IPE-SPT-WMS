@@ -2279,12 +2279,14 @@ function partyForm(kind, id) {
     ${fld('Email', 'email', { type: 'email', val: x.email || '' })}${fld('Kota', 'city', { val: x.city || '' })}
     ${fld('Alamat', 'address', { type: 'textarea', span: 2, val: x.address || '' })}
     ${fld(isC ? 'Catatan (mis. unit alat yang dimiliki)' : 'Catatan', 'note', { type: 'textarea', span: 2, val: x.note || '' })}
-  </form><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan</button></div>`);
+  </form><div class="err" id="cerr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan</button></div>`);
   m.el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return;
     if (b.dataset.x === 'c') return m.close();
     const f = $('#cf', m.el); if (!f.reportValidity()) return;
     const v = Object.fromEntries(new FormData(f)); for (const k in v) v[k] = v[k].trim();
+    const kf = isC ? custKey : normName, dupe = S[coll].find(o => o.id !== id && kf(o.name) === kf(v.name));
+    if (dupe) { $('#cerr', m.el).textContent = `${lab} "${dupe.name}" sudah ada di database${dupe.group ? ' (grup ' + dupe.group + ')' : ''}. Tidak bisa menambahkan ${lab.toLowerCase()} yang sama. Gunakan yang sudah ada atau ubah namanya.`; $('[name=name]', m.el).focus(); return; }
     b.disabled = true;
     const ok = await guarded(async () => { if (id) await db.doc(`${coll}/${id}`).update({ ...v, updatedAt: nowISO() }); else await db.collection(coll).add({ ...v, createdAt: nowISO(), createdBy: uid }); });
     if (ok) { m.close(); toast(lab + ' tersimpan'); } else b.disabled = false;
