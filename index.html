@@ -218,6 +218,8 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .sb{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff}.sb-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;background:#f6f7f9;flex-wrap:wrap}.sb-h label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut);font-weight:600;min-width:220px}.sb-h .sdoc{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:13px ui-monospace,Menlo,Consolas,monospace;background:#fff}
 .sbt{width:100%;border-collapse:collapse}.sbt td{padding:7px 12px;border-top:1px solid #eef0f3;font-size:13px}.sbt .sq{width:78px;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;text-align:right}.sbt td.n{text-align:right;white-space:nowrap}.sb-bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:6px 0 10px}
 @media(max-width:720px){.sbt td.sbd{display:none}.sb-h label{min-width:0;width:100%}}
+.rvbox{background:#1b1c1f;border-radius:12px;padding:6px 4px 2px;margin-top:4px}.rvsvg{display:block;height:auto}
+.chd{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.chd h2{margin:0}.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg button{border:0;background:#fff;padding:6px 14px;font:600 12.5px inherit;cursor:pointer;color:var(--mut)}.seg button.on{background:var(--y);color:#16181d}
 </style>
 </head>
 <body>
@@ -611,25 +613,52 @@ function analyze(ym, sohOf) {
 const urgChip = u => ({ 'ORDER SEKARANG!': 'bad', 'SEGERA ORDER': 'warn', 'AMAN': 'ok', 'STOK CUKUP': 'ok', 'TIDAK BERGERAK': 'gray' }[u] || 'gray');
 const mvChip = m => ({ FAST: 'ok', MEDIUM: 'info', SLOW: 'warn', DEADSTOCK: 'bad' }[m] || 'gray');
 
+/* ============ GRAFIK REVENUE (garis halus + area) ============ */
+function revChartSVG(vals, tgM, W) {
+  W = Math.max(300, Math.round(W)); const H = W < 480 ? 270 : 320, narrow = W < 480, fs = narrow ? 10 : 11.5;
+  const pad = { l: narrow ? 40 : 52, r: narrow ? 14 : 24, t: 38, b: 30 }, pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+  const top = Math.max(...vals, tgM || 0, 1), stepRaw = top / 4, mag = Math.pow(10, Math.floor(Math.log10(stepRaw))), step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(x => x >= stepRaw), ymax = step * Math.ceil(top * 1.12 / step);
+  const X = i => pad.l + pw * (i / 11), Y = v => pad.t + ph - ph * (v / ymax);
+  const jt = v => { const m = v / 1e6; if (m >= 1000) return (m / 1000).toFixed(2).replace('.', ',') + ' M'; if (m >= 100) return Math.round(m) + ' jt'; if (m >= 1) return m.toFixed(1).replace('.', ',') + ' jt'; return v > 0 ? Math.round(v / 1e3) + ' rb' : '0'; };
+  const ax = v => { const m = v / 1e6; return m >= 1000 ? (m / 1000).toString().replace('.', ',') + ' M' : m === 0 ? '0' : (Math.round(m * 10) / 10).toString().replace('.', ',') + (narrow ? '' : ' jt'); };
+  const n = vals.length, xs = vals.map((_, i) => X(i)), ys = vals.map(Y), d = [], mt = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) d[i] = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+  mt[0] = d[0]; mt[n - 1] = d[n - 2]; for (let i = 1; i < n - 1; i++) mt[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) { if (d[i] === 0) { mt[i] = mt[i + 1] = 0; continue; } const a = mt[i] / d[i], b = mt[i + 1] / d[i], h = Math.hypot(a, b); if (h > 3) { mt[i] = 3 * a / h * d[i]; mt[i + 1] = 3 * b / h * d[i]; } }
+  let path = `M${xs[0].toFixed(1)},${ys[0].toFixed(1)}`; for (let i = 0; i < n - 1; i++) { const dx = (xs[i + 1] - xs[i]) / 3; path += ` C${(xs[i] + dx).toFixed(1)},${(ys[i] + mt[i] * dx).toFixed(1)} ${(xs[i + 1] - dx).toFixed(1)},${(ys[i + 1] - mt[i + 1] * dx).toFixed(1)} ${xs[i + 1].toFixed(1)},${ys[i + 1].toFixed(1)}`; }
+  const area = `${path} L${xs[n - 1].toFixed(1)},${(pad.t + ph).toFixed(1)} L${xs[0].toFixed(1)},${(pad.t + ph).toFixed(1)} Z`;
+  let g = '', lab = '';
+  for (let v = 0; v <= ymax + 1e-6; v += step) { const y = Y(v); g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#2f3136" stroke-width="1"/><text x="${pad.l - 7}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#a8acb3" font-size="${fs - 0.5}">${ax(v)}</text>`; }
+  for (let i = 0; i < n; i++) {
+    g += `<line x1="${xs[i].toFixed(1)}" x2="${xs[i].toFixed(1)}" y1="${pad.t}" y2="${pad.t + ph}" stroke="#26282c" stroke-width="1"/><text x="${xs[i].toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="#c9ccd1" font-size="${fs}">${BULAN[i]}</text>`;
+    const lo = (i > 0 && vals[i] < vals[i - 1]) && (i < n - 1 && vals[i] < vals[i + 1]), below = lo || (i === n - 1 && vals[i] <= vals[i - 1] && vals[i] < ymax * 0.3);
+    const ty = below ? ys[i] + 19 : ys[i] - 11; lab += `<text x="${xs[i].toFixed(1)}" y="${Math.max(12, ty).toFixed(1)}" text-anchor="middle" fill="#fff" font-size="${fs}" font-weight="700" paint-order="stroke" stroke="#16181b" stroke-width="3" stroke-linejoin="round">${vals[i] > 0 ? jt(vals[i]) : '0'}</text>`;
+  }
+  const dots = vals.map((v, i) => `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${narrow ? 3.5 : 4.5}" fill="#3f8f1e" stroke="#16181b" stroke-width="1.5"><title>${BULAN[i]}: ${fmtRp(v)}</title></circle>`).join('');
+  const tg = tgM > 0 ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${Y(tgM).toFixed(1)}" y2="${Y(tgM).toFixed(1)}" stroke="#ff6b6b" stroke-width="1.6" stroke-dasharray="6 5"/>` : '';
+  const lg = `<rect x="${W / 2 - 62}" y="9" width="22" height="12" rx="3" fill="#1d2a17" stroke="#4aa023" stroke-width="2.5"/><text x="${W / 2 - 34}" y="19.5" fill="#d5d8dc" font-size="${fs + 0.5}">Estimated Revenue</text>`;
+  return `<svg class="rvsvg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Tren revenue bulanan"><defs><linearGradient id="rvg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f8f1e" stop-opacity=".38"/><stop offset="1" stop-color="#3f8f1e" stop-opacity=".03"/></linearGradient></defs>${g}${tg}<path d="${area}" fill="url(#rvg)"/><path d="${path}" fill="none" stroke="#3f8f1e" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>${dots}${lab}${lg}</svg>`;
+}
+
 /* ============ DASHBOARD ============ */
 function viewDashboard() {
   return {
     shell: `${ro()}${loadNoteHTML}<div class="bar"><label class="mut">Tahun <select id="yr"></select></label></div><div id="dash"></div>`,
     input(e) { if (e.target.id === 'yr') { F.dash.year = +e.target.value; this.fill(); } if (e.target.id === 'chym') { F.dash.ym = e.target.value; this.fill(); } },
-    act(a) { if (a === 'target') return editTarget(F.dash.year); if (a === 'sample') loadSample(); if (a === 'wipe') wipeAll(); if (a === 'bkj') backupJSON(); if (a === 'bkx') backupXLSX(); if (a === 'restore') restoreBackup(); },
+    act(a, id) { if (a === 'chm') { F.dash.chart = id; return this.fill(); } if (a === 'target') return editTarget(F.dash.year); if (a === 'sample') loadSample(); if (a === 'wipe') wipeAll(); if (a === 'bkj') backupJSON(); if (a === 'bkx') backupXLSX(); if (a === 'restore') restoreBackup(); },
     fill() {
       const box = $('#dash'), parts = S.parts, yr = F.dash.year;
       const years = [...new Set([new Date().getFullYear(), ...S.movements.map(m => +(m.date || '').slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
       const ys = $('#yr'); if (ys) ys.innerHTML = years.map(y => `<option ${y === yr ? 'selected' : ''}>${y}</option>`).join('');
       const A = analyze(curYM());
-      let rev = 0, delQty = 0; const monthly = new Array(12).fill(0);
+      let rev = 0, delQty = 0; const monthly = new Array(12).fill(0), monthlyRev = new Array(12).fill(0);
       for (const m of S.movements) {
         if (m.dir !== 'out' || !DELIV_KINDS.includes(m.kind) || +(m.date || '').slice(0, 4) !== yr) continue;
-        const mi = +m.date.slice(5, 7) - 1; monthly[mi] += m.qty; delQty += m.qty; rev += m.qty * (partMap.get(m.partId)?.price || 0);
+        const mi = +m.date.slice(5, 7) - 1; monthly[mi] += m.qty; delQty += m.qty; const rv0 = m.qty * (partMap.get(m.partId)?.price || 0); rev += rv0; monthlyRev[mi] += rv0;
       }
       const totQty = parts.reduce((s, p) => s + Math.max(0, stock(p.id)), 0), totVal = parts.reduce((s, p) => s + Math.max(0, stock(p.id)) * (p.price || 0), 0);
       const top20 = [...A.values()].filter(a => a.T > 0).sort((a, b) => b.T - a.T).slice(0, 20);
-      const mx = Math.max(1, ...monthly);
+      const revMode = F.dash.chart === 'rev', series = revMode ? monthlyRev : monthly, tgM = revMode ? targetOf(yr) / 12 : 0, mx = Math.max(1, ...series);
       const cat = { DEADSTOCK: { n: 0, q: 0, v: 0 }, SLOW: { n: 0, q: 0, v: 0 }, MEDIUM: { n: 0, q: 0, v: 0 }, FAST: { n: 0, q: 0, v: 0 } };
       for (const a of A.values()) if (a.mv && a.soh > 0) { const c = cat[a.mv]; c.n++; c.q += a.soh; c.v += a.soh * (a.p.price || 0); }
       const totCatV = Object.values(cat).reduce((s, c) => s + c.v, 0) || 1;
@@ -656,9 +685,9 @@ function viewDashboard() {
       </div>
       ${dashChartsHTML()}
       <div class="row2">
-        <div class="card"><h2>Total delivery per bulan ${yr} (qty)</h2>
-          <div class="chart">${monthly.map((v, i) => `<div class="c"><div class="bars"><i title="${BULAN[i]}: ${fmtN(v)}" style="height:${v / mx * 100}%;background:var(--y);width:60%;max-width:34px"></i></div><small>${BULAN[i]}</small></div>`).join('')}</div>
-          <div class="legend"><span>Delivery = SOLD CUSTOMER + WH03 SERVICE + BUNDLING</span></div></div>
+        <div class="card"><div class="chd"><h2>${revMode ? 'Tren revenue per bulan ' + yr + ' (Rp)' : 'Total delivery per bulan ' + yr + ' (qty)'}</h2><div class="seg"><button class="${revMode ? '' : 'on'}" data-act="chm" data-id="qty">Qty</button><button class="${revMode ? 'on' : ''}" data-act="chm" data-id="rev">Revenue</button></div></div>
+          ${revMode ? `<div class="rvbox">${revChartSVG(monthlyRev, tgM, ($('#dash')?.clientWidth || 700) / 2 - 36)}</div>` : `<div class="chart">${monthly.map((v, i) => `<div class="c"><div class="bars"><i title="${BULAN[i]}: ${fmtN(v)}" style="height:${v / mx * 100}%;background:var(--y);width:60%;max-width:34px"></i></div><small>${BULAN[i]}</small></div>`).join('')}</div>`}
+          <div class="legend"><span>${revMode ? 'Revenue = qty delivery x harga part · total ' + fmtRp(rev) + (tgM ? ' · garis merah putus = target rata-rata/bulan (' + fmtRp(tgM) + ')' : '') + ' · label dalam jt = juta rupiah' : 'Delivery = SOLD CUSTOMER + WH03 SERVICE + BUNDLING'}</span></div></div>
         <div class="card"><h2>Parts by movement</h2>
           <div class="cards" style="margin:0;grid-template-columns:repeat(2,1fr)">${rowsCat.map(r => `<div class="card stat" style="padding:12px"><small><span class="chip ${r[2]}">${r[0]}</span></small><b>${fmtN(cat[r[0]].n)}</b></div>`).join('')}</div>
           <p class="mut" style="margin:10px 0 0;font-size:12px">Berdasarkan delivery 6 bulan terakhir (FAST: &gt;3 bulan bergerak, MEDIUM: 3, SLOW: 1–2, DEADSTOCK: ada stok tanpa delivery).</p></div>
