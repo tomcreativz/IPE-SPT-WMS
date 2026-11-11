@@ -114,7 +114,16 @@ td.act{white-space:nowrap;text-align:right}
 .kc-logo{width:285px;border-left:2px solid #d9d6cf;display:flex;flex-direction:column;justify-content:center;padding:0 20px}.kc-logo .w{display:flex;align-items:center;gap:6px;font-weight:800;font-size:30px;letter-spacing:.5px;color:#1b2a4a}.kc-logo .w i{width:15px;height:15px;border-radius:50%;background:#111;display:inline-block}.kc-logo .w .y{color:#f5c400}.kc-logo small{font-size:10px;letter-spacing:2px;font-weight:700;color:#1b2a4a;margin-top:6px;max-width:170px}
 .kc-sum{display:flex;gap:14px;padding:18px 20px;background:#f7f5f1;border-bottom:1px solid #e5e2da;flex-wrap:wrap}.kc-sum>div{background:#fff;border:1px solid #dcd8cf;border-radius:8px;padding:10px 24px;text-align:center;min-width:130px}.kc-sum small{display:block;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#6b6b6b;font-weight:700}.kc-sum b{font-size:30px;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700}.kc-sum b.fin{color:#1b2a4a}
 .kc-tw{overflow:auto;max-height:68vh}table.kt{width:100%;border-collapse:collapse}table.kt td,table.kt th{border-right:1px solid #e3e0d8}table.kt th{border-right-color:#3a4a6b}table.kt td:last-child,table.kt th:last-child{border-right:0}table.kt th{background:#1b2a4a;color:#fff;font-size:12.5px;letter-spacing:1.5px;padding:15px 20px;position:sticky;top:0;border-right:1px solid #33456f}table.kt td{padding:14px 20px;border-bottom:1px solid #e3e0d8;border-right:1px solid #e3e0d8;font-size:16px}table.kt tbody tr:nth-child(even){background:#f7f5f1}table.kt td.d,table.kt td.rm{font-family:ui-monospace,Menlo,Consolas,monospace;color:#555;font-size:15px}table.kt td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;text-align:center}table.kt th.n{text-align:center}table.kt td.s{color:#1b2a4a}table.kt .z{color:#c9c6bd;font-weight:400}
-@media(max-width:720px){.kc-logo{display:none}.kc-sum>div{flex:1;min-width:90px;padding:8px}.kc-sum b{font-size:22px}table.kt td,table.kt th{padding:10px 10px;font-size:13px}}
+@media(max-width:720px){.kc-logo{display:none}.kc-sum>div{flex:1;min-width:90px;padding:8px}.kc-sum b{font-size:22px}table.kt td,table.kt th{padding:10px 10px;font-size:13px}
+  .kc-tw{overflow-x:hidden}
+  table.kt{table-layout:fixed;width:100%}
+  table.kt th{font-size:9.5px;letter-spacing:.2px;padding:9px 3px;text-align:center}
+  table.kt td{font-size:11.5px;padding:8px 3px;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;vertical-align:top}
+  table.kt td.d{font-size:10px;padding-left:4px;padding-right:2px;word-break:normal;overflow-wrap:normal;white-space:nowrap}
+  table.kt td.rm{font-size:10px}
+  table.kt td.n{font-size:12px}
+  table.kt th:nth-child(1){width:19%}table.kt th:nth-child(2){width:25%}table.kt th:nth-child(3){width:21%}table.kt th:nth-child(4),table.kt th:nth-child(5){width:10.5%}table.kt th:nth-child(6){width:14%}
+}
 
 table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-overflow:ellipsis}table.pt td.n{white-space:nowrap}table.pt td:first-child,table.pt th:first-child{text-overflow:clip;padding-left:12px;padding-right:6px}table.pt td.act{overflow:visible;text-overflow:clip;text-align:right}table.pt td.nw,table.pt th{white-space:nowrap}table.pt td.nm{white-space:normal;line-height:1.35}
 .mut{color:var(--mut)}
