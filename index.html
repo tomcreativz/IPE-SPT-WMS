@@ -2685,14 +2685,18 @@ function pickGroups(items, g2) { return items.map(it => ({ po: it.po, c: it.c, r
 /* ===== Barang Keluar gabungan: dari beberapa PO sekaligus ===== */
 function sendSelect() {
   if (!canWrite) return denied();
-  const el0 = S.pos.map(po => ({ po, inf: poInfo(po), c: custMap.get(po.customerId) })).filter(x => x.inf.open && x.inf.lines.some(l => l.sisa > 0 && stock(l.partId) > 0)).sort((a, b) => (a.c?.name || '').localeCompare(b.c?.name || '', 'id') || (a.po.date || '').localeCompare(b.po.date || '') || a.po.poNo.localeCompare(b.po.poNo));
-  if (!el0.length) { toast('Tidak ada PO terbuka yang stoknya tersedia untuk dikirim.', 'err'); return; }
-  const cg = new Map(); el0.forEach((x, i) => { const k = x.po.customerId || '-'; if (!cg.has(k)) cg.set(k, []); cg.get(k).push(i); });
-  const row = (x, i) => `<label class="pk-po"><input type="checkbox" value="${i}" data-g="${esc(x.po.customerId || '-')}" ${x.inf.short ? '' : 'checked'} style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b> ${x.po.picked ? '<span class="chip info">SUDAH DIPACKING</span>' : ''} ${x.inf.short ? '<span class="chip bad">ADA KURANG</span>' : '<span class="chip ok">LENGKAP</span>'}<br><span class="mut" style="font-size:12.5px">${esc(fmtD(x.po.date))}${x.po.plant ? ' · ' + esc(x.po.plant) : ''}</span></span><span class="mut">${x.inf.lines.filter(l => l.sisa > 0).length} item</span></label>`;
-  const m = modal(`<h3>Barang Keluar Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih beberapa PO yang dikirim bersamaan. PO <b>satu customer</b> digabung dalam <b>satu dokumen</b> (kolom PO tiap baris terisi otomatis). Kalau customernya berbeda, formulir dibuka satu per satu per customer. Qty diisi sebesar sisa PO, dibatasi stok yang ada.</p>
+  /* siap kirim = sisa > 0, stok ada, dan bukan baris KURANG (stok tidak sedang dibutuhkan PO lain) */
+  const readyOf = inf => inf.lines.filter(l => l.sisa > 0 && l.st.k !== 'KURANG' && stock(l.partId) > 0);
+  const el0 = S.pos.map(po => { const inf = poInfo(po); return { po, inf, c: custMap.get(po.customerId), ready: readyOf(inf).length, open: inf.lines.filter(l => l.sisa > 0).length }; }).filter(x => x.inf.open && x.ready > 0).sort((a, b) => (a.po.date || '').localeCompare(b.po.date || '') || a.po.poNo.localeCompare(b.po.poNo));
+  if (!el0.length) { toast('Tidak ada PO terbuka yang punya part siap kirim.', 'err'); return; }
+  const gOf = x => (x.po.plant || '').trim().toUpperCase() || (x.c?.group || '').trim() || 'Tanpa grup';
+  const cg = new Map(); el0.forEach((x, i) => { const k = gOf(x); if (!cg.has(k)) cg.set(k, []); cg.get(k).push(i); });
+  const cgKeys = [...cg.keys()].sort((a, b) => (a === 'Tanpa grup') - (b === 'Tanpa grup') || a.localeCompare(b, 'id'));
+  const row = (x, i) => { const par = x.ready < x.open; return `<label class="pk-po"><input type="checkbox" value="${i}" data-g="${esc(gOf(x))}" ${par ? '' : 'checked'} style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b> ${x.po.picked ? '<span class="chip info">SUDAH DIPACKING</span>' : ''} ${par ? `<span class="chip warn">PARALEL · ${x.ready}/${x.open} item siap</span>` : '<span class="chip ok">LENGKAP</span>'}<br><span class="mut" style="font-size:12.5px">${esc(x.c?.name || '')} · ${esc(fmtD(x.po.date))}</span></span><span class="mut">${x.open} item</span></label>`; };
+  const m = modal(`<h3>Barang Keluar Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">PO dikelompokkan per grup. Centang PO yang dikirim bersamaan; centang nama grup untuk memilih semua. PO <b>lengkap</b> sudah dicentang. PO bertanda <span class="chip warn" style="font-size:11px">PARALEL</span> belum lengkap: bila dicentang, <b>hanya part yang siap</b> yang dikirim, part KURANG dilewati dan tetap menjadi sisa PO. Satu dokumen dibuat per customer (kolom PO tiap baris terisi otomatis).</p>
   <label style="display:flex;gap:10px;align-items:center;padding:8px 4px;font-weight:700"><input type="checkbox" id="sall" style="width:20px;height:20px"> Pilih semua PO</label>
   <input type="search" id="sfq" placeholder="Cari no. PO / customer…" style="width:100%;margin:0 0 6px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit">
-  <div id="sols" style="max-height:48vh;overflow:auto">${[...cg].map(([k, ix]) => `<div class="pk-gh" data-gh="${esc(k)}"><label><input type="checkbox" class="gck" data-g="${esc(k)}" style="width:20px;height:20px"><b>${esc(custMap.get(k)?.name || '(tanpa customer)')}</b></label><span class="mut">${ix.length} PO</span></div><div class="pk-gb" data-gb="${esc(k)}">${ix.map(i => row(el0[i], i)).join('')}</div>`).join('')}</div>
+  <div id="sols" style="max-height:48vh;overflow:auto">${cgKeys.map(k => [k, cg.get(k)]).map(([k, ix]) => `<div class="pk-gh" data-gh="${esc(k)}"><label><input type="checkbox" class="gck" data-g="${esc(k)}" style="width:20px;height:20px"><b>${esc(k)}</b></label><span class="mut">${ix.length} PO</span></div><div class="pk-gb" data-gb="${esc(k)}">${ix.map(i => row(el0[i], i)).join('')}</div>`).join('')}</div>
   <div class="err" id="serr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="go">Lanjut</button></div>`);
   const el = m.el, boxes = () => [...el.querySelectorAll('#sols input[value]')], gboxes = () => [...el.querySelectorAll('#sols .gck')];
   const sync = () => { const bs = boxes(); $('#sall', el).checked = bs.length > 0 && bs.every(b => b.checked); for (const g of gboxes()) { const mine = bs.filter(b => b.dataset.g === g.dataset.g), n = mine.filter(b => b.checked).length; g.checked = n === mine.length; g.indeterminate = n > 0 && n < mine.length; } const c = bs.filter(b => b.checked).length, go = el.querySelector('[data-x=go]'); go.textContent = c ? `Lanjut (${c} PO)` : 'Lanjut'; };
@@ -2703,7 +2707,7 @@ function sendSelect() {
   });
   el.addEventListener('input', e => {
     if (e.target.id !== 'sfq') return; const q = e.target.value.trim().toLowerCase();
-    for (const b of boxes()) { const x = el0[+b.value], hit = !q || (x.po.poNo + ' ' + (x.c?.name || '') + ' ' + (x.po.plant || '')).toLowerCase().includes(q); b.closest('.pk-po').hidden = !hit; }
+    for (const b of boxes()) { const x = el0[+b.value], hit = !q || (x.po.poNo + ' ' + (x.c?.name || '') + ' ' + gOf(x)).toLowerCase().includes(q); b.closest('.pk-po').hidden = !hit; }
     for (const h of el.querySelectorAll('.pk-gh')) { const body = el.querySelector(`.pk-gb[data-gb="${CSS.escape(h.dataset.gh)}"]`); h.hidden = body.hidden = ![...body.children].some(c => !c.hidden); }
   });
   sync();
@@ -2718,17 +2722,17 @@ function sendSelect() {
       const k = x.po.customerId || '-'; if (!groups.has(k)) groups.set(k, { party: custMap.get(k)?.name || '', lines: [], pos: [] });
       const g = groups.get(k); let first = true;
       for (const l of x.inf.lines) {
-        if (l.sisa <= 0) continue; if (!left.has(l.partId)) left.set(l.partId, Math.max(0, stock(l.partId)));
+        if (l.sisa <= 0) continue; if (l.st.k === 'KURANG') { skipped++; continue; } if (!left.has(l.partId)) left.set(l.partId, Math.max(0, stock(l.partId)));
         const q = Math.min(l.sisa, left.get(l.partId)); if (q <= 0) { skipped++; continue; }
         left.set(l.partId, left.get(l.partId) - q); g.lines.push({ partId: l.partId, qty: q, po: first ? x.po.poNo : '' }); first = false;
       }
-      g.pos.push(x.po.poNo);
+      g.pos.push(x.po.poNo); if (x.ready < x.open) g.par = true;
     }
     const queue = [...groups.values()].filter(g => g.lines.length);
     if (!queue.length) { $('#serr', el).textContent = 'Stok tidak cukup untuk PO yang dipilih.'; return; }
-    m.close(); if (skipped) toast(`${skipped} baris dilewati karena stok habis.`);
+    m.close(); if (skipped) toast(`${skipped} baris dilewati (part kurang/stok habis) dan tetap menjadi sisa PO.`);
     const run = i => { if (i >= queue.length) return; const g = queue[i];
-      openTx('out', { kind: 'SOLD CUSTOMER', party: g.party, note: 'Pengiriman PO ' + g.pos.join(', '), lines: g.lines, title: queue.length > 1 ? `Dokumen ${i + 1} dari ${queue.length}` : g.pos.length + ' PO', onDone: ok => { if (ok) run(i + 1); else if (i + 1 < queue.length) toast('Sisa dokumen dibatalkan. Ulangi dari Barang Keluar Gabungan.'); } }); };
+      openTx('out', { kind: 'SOLD CUSTOMER', party: g.party, note: 'Pengiriman PO ' + g.pos.join(', '), lines: g.lines, title: (queue.length > 1 ? `Dokumen ${i + 1} dari ${queue.length}` : g.pos.length + ' PO') + (g.par ? ' · PARALEL' : ''), onDone: ok => { if (ok) run(i + 1); else if (i + 1 < queue.length) toast('Sisa dokumen dibatalkan. Ulangi dari Barang Keluar Gabungan.'); } }); };
     setTimeout(() => run(0), 50);
   });
 }
