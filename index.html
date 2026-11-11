@@ -215,6 +215,9 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .mn-g{border:1px solid #f5d37a;background:#fffdf3;border-radius:12px;padding:12px 14px;margin-bottom:12px}.mn-g .mn-f{background:#fff}
 .brs{padding:5px 8px;border:1px solid #d1d5db;border-radius:8px;font-size:12.5px;max-width:150px;background:#fff}.br-c{white-space:nowrap}
 .brw{display:flex;flex-direction:column;gap:4px}.brw .brp{font-size:12px;color:#4b5563}.brbar{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:10px}.brbar label{display:flex;flex-direction:column;gap:4px;font-size:12.5px}.brbar select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;background:#fff;min-width:0;flex:1}@media(max-width:720px){.brbar{grid-template-columns:1fr}}
+.sb{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff}.sb-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;background:#f6f7f9;flex-wrap:wrap}.sb-h label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut);font-weight:600;min-width:220px}.sb-h .sdoc{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:13px ui-monospace,Menlo,Consolas,monospace;background:#fff}
+.sbt{width:100%;border-collapse:collapse}.sbt td{padding:7px 12px;border-top:1px solid #eef0f3;font-size:13px}.sbt .sq{width:78px;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;text-align:right}.sbt td.n{text-align:right;white-space:nowrap}.sb-bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:6px 0 10px}
+@media(max-width:720px){.sbt td.sbd{display:none}.sb-h label{min-width:0;width:100%}}
 </style>
 </head>
 <body>
@@ -2683,6 +2686,51 @@ function pickRows(items, g2) {
 }
 function pickGroups(items, g2) { return items.map(it => ({ po: it.po, c: it.c, rows: pickRows([it], g2).map(r => ({ ...r, poNo: it.po.poNo })) })); }
 /* ===== Barang Keluar gabungan: dari beberapa PO sekaligus ===== */
+/* Satu formulir untuk banyak PO: data umum diisi sekali, hanya No. Dokumen (BPB/GI) yang diisi per PO. */
+function sendBatchForm(blocks) {
+  const nBlk = blocks.length, tot = blocks.reduce((t, b) => t + b.lines.length, 0);
+  const m = modal(`<h3>Barang Keluar Gabungan <span class="chip info">${nBlk} PO · ${tot} baris</span></h3>
+  <p class="mut" style="margin:0 0 10px;font-size:13px">Isi data umum sekali. Tiap PO tercatat sebagai dokumen sendiri: <b>customer dan PO Cust terisi otomatis</b>, Anda hanya perlu mengisi <b>No. Dokumen (BPB/GI)</b> tiap PO.</p>
+  <form id="sb"><div class="grid">
+    ${fld('Tanggal', 'date', { type: 'date', val: today(), attrs: 'required' })}
+    ${fld('FORM/TO', 'kind', { opts: OUT_TYPES.map(k => [k, k]), val: 'SOLD CUSTOMER' })}
+    ${fld('Ekspedisi', 'ekspedisi', { val: '', list: 'ekspList' })}
+    ${fld('AWB / Resi', 'awb', { val: '' })}
+  </div></form>
+  <div class="sb-bar"><span class="mut" style="font-size:12.5px">Nomor dokumen tiap PO biasanya berurutan. Isi nomor pertama, lalu klik tombol ini:</span><button class="btn sm" data-x="seq">Isi nomor berurutan</button></div>
+  <div id="sbl">${blocks.map((b, i) => `<div class="sb" data-i="${i}"><div class="sb-h"><div><b class="mono">PO ${esc(b.po.poNo)}</b> ${b.par ? '<span class="chip warn">PARALEL</span>' : ''}<div class="mut" style="font-size:12.5px">${esc(b.c?.name || '')}${b.po.plant ? ' · ' + esc(b.po.plant) : ''}</div></div><label>No. Dokumen (BPB/GI)<input class="sdoc" value="${esc(SOLD_PRE())}" placeholder="mis. ${esc(SOLD_PRE())}…"></label></div>
+    <table class="sbt"><tbody>${b.lines.map((l, k) => { const p = partMap.get(l.partId) || {}; return `<tr data-k="${k}"><td class="mono"><b>${esc(p.partNo)}</b></td><td class="sbd">${esc(p.name || '')}</td><td class="mut">${esc(p.location || '')}</td><td class="n"><input class="sq" type="number" min="0" step="any" value="${l.qty}"></td><td class="mut n">stok ${fmtN(stock(l.partId))}</td><td><button type="button" class="btn sm" data-x="rm" title="Buang baris ini">×</button></td></tr>`; }).join('')}</tbody></table></div>`).join('')}</div>
+  <div class="err" id="sberr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan semua (${nBlk} dokumen)</button></div>`, { wide: true });
+  const el = m.el, f = $('#sb', el);
+  el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
+    if (x === 'c') return m.close();
+    if (x === 'rm') { const tr = b.closest('tr'), tb = tr.parentElement; tr.remove(); if (!tb.children.length) b.closest('.sb')?.remove(); return; }
+    if (x === 'seq') {
+      const ins = [...el.querySelectorAll('.sdoc')], first = ins[0].value.trim(), mt = first.match(/^(.*?)(\d+)$/);
+      if (!mt) { toast('Isi dulu nomor dokumen pertama yang berakhir angka.', 'err'); return; }
+      const w = mt[2].length; ins.forEach((inp, i) => { inp.value = mt[1] + String(+mt[2] + i).padStart(w, '0'); }); return;
+    }
+    if (x !== 's') return;
+    const err = $('#sberr', el); err.textContent = '';
+    if (!f.reportValidity()) return;
+    const v = Object.fromEntries(new FormData(f)), pre = SOLD_PRE();
+    if (closedSet.has((v.date || '').slice(0, 7))) { err.textContent = lockMsg(v.date); return; }
+    const docs = [...el.querySelectorAll('.sb')].map(box => { const bk = blocks[+box.dataset.i]; return { bk, doc: $('.sdoc', box).value.trim(), lines: [...box.querySelectorAll('tbody tr')].map(tr => ({ partId: bk.lines[+tr.dataset.k].partId, q: parseFloat($('.sq', tr).value) })) }; });
+    if (!docs.length) { err.textContent = 'Tidak ada baris untuk disimpan.'; return; }
+    const sum = new Map();
+    for (const d of docs) for (const l of d.lines) { if (!(l.q > 0)) { err.textContent = `Qty untuk ${partMap.get(l.partId)?.partNo} (PO ${d.bk.po.poNo}) harus lebih dari 0.`; return; } sum.set(l.partId, (sum.get(l.partId) || 0) + l.q); }
+    for (const [id, q] of sum) if (q > stock(id)) { const p = partMap.get(id); err.textContent = `Stok ${p.partNo} tidak cukup: tersedia ${fmtN(stock(id))} ${p.unit}, total diminta ${fmtN(q)}.`; return; }
+    const noDoc = v.kind === 'SOLD CUSTOMER' ? docs.filter(d => !d.doc || d.doc === pre) : [];
+    if (noDoc.length && !(await confirmBox(`${noDoc.length} PO belum diisi No. Dokumen (${noDoc.map(d => d.bk.po.poNo).join(', ')}). Tetap simpan tanpa nomor dokumen?`, 'Ya, simpan', false))) return;
+    b.disabled = true;
+    const ok = await guarded(async () => {
+      const t0 = Date.now(); let ln = 0;
+      for (const d of docs) for (const l of d.lines) { ln++; await db.collection('movements').add({ docNo: d.doc === pre ? '' : d.doc, date: v.date, partId: l.partId, qty: l.q, dir: 'out', kind: v.kind, party: d.bk.c?.name || '', partyId: d.bk.po.customerId || '', poRef: d.bk.po.poNo, poId: d.bk.po.id, ekspedisi: (v.ekspedisi || '').trim(), awb: (v.awb || '').trim(), note: '', by: uid, ln, bt: new Date(t0).toISOString(), at: new Date(t0 + ln).toISOString() }); }
+    });
+    if (ok) { m.close(); toast(`${docs.length} dokumen (${docs.reduce((t, d) => t + d.lines.length, 0)} baris) tersimpan`); } else b.disabled = false;
+  });
+}
 function sendSelect() {
   if (!canWrite) return denied();
   /* siap kirim = sisa > 0, stok ada, dan bukan baris KURANG (stok tidak sedang dibutuhkan PO lain) */
@@ -2693,7 +2741,7 @@ function sendSelect() {
   const cg = new Map(); el0.forEach((x, i) => { const k = gOf(x); if (!cg.has(k)) cg.set(k, []); cg.get(k).push(i); });
   const cgKeys = [...cg.keys()].sort((a, b) => (a === 'Tanpa grup') - (b === 'Tanpa grup') || a.localeCompare(b, 'id'));
   const row = (x, i) => { const par = x.ready < x.open; return `<label class="pk-po"><input type="checkbox" value="${i}" data-g="${esc(gOf(x))}" ${par ? '' : 'checked'} style="width:20px;height:20px"><span style="flex:1"><b class="mono">${esc(x.po.poNo)}</b> ${x.po.picked ? '<span class="chip info">SUDAH DIPACKING</span>' : ''} ${par ? `<span class="chip warn">PARALEL · ${x.ready}/${x.open} item siap</span>` : '<span class="chip ok">LENGKAP</span>'}<br><span class="mut" style="font-size:12.5px">${esc(x.c?.name || '')} · ${esc(fmtD(x.po.date))}</span></span><span class="mut">${x.open} item</span></label>`; };
-  const m = modal(`<h3>Barang Keluar Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">PO dikelompokkan per grup. Centang PO yang dikirim bersamaan; centang nama grup untuk memilih semua. PO <b>lengkap</b> sudah dicentang. PO bertanda <span class="chip warn" style="font-size:11px">PARALEL</span> belum lengkap: bila dicentang, <b>hanya part yang siap</b> yang dikirim, part KURANG dilewati dan tetap menjadi sisa PO. Satu dokumen dibuat per customer (kolom PO tiap baris terisi otomatis).</p>
+  const m = modal(`<h3>Barang Keluar Gabungan</h3><p class="mut" style="margin:0 0 10px;font-size:13px">PO dikelompokkan per grup. Centang PO yang dikirim bersamaan; centang nama grup untuk memilih semua. PO <b>lengkap</b> sudah dicentang. PO bertanda <span class="chip warn" style="font-size:11px">PARALEL</span> belum lengkap: bila dicentang, <b>hanya part yang siap</b> yang dikirim, part KURANG dilewati dan tetap menjadi sisa PO. Semua PO terpilih dibuka dalam <b>satu formulir</b>: data umum diisi sekali, dan hanya No. Dokumen (BPB/GI) yang diisi per PO.</p>
   <label style="display:flex;gap:10px;align-items:center;padding:8px 4px;font-weight:700"><input type="checkbox" id="sall" style="width:20px;height:20px"> Pilih semua PO</label>
   <input type="search" id="sfq" placeholder="Cari no. PO / customer…" style="width:100%;margin:0 0 6px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font:inherit">
   <div id="sols" style="max-height:48vh;overflow:auto">${cgKeys.map(k => [k, cg.get(k)]).map(([k, ix]) => `<div class="pk-gh" data-gh="${esc(k)}"><label><input type="checkbox" class="gck" data-g="${esc(k)}" style="width:20px;height:20px"><b>${esc(k)}</b></label><span class="mut">${ix.length} PO</span></div><div class="pk-gb" data-gb="${esc(k)}">${ix.map(i => row(el0[i], i)).join('')}</div>`).join('')}</div>
@@ -2717,23 +2765,17 @@ function sendSelect() {
     if (b.dataset.x !== 'go') return;
     const ch = boxes().filter(x => x.checked).map(x => el0[+x.value]);
     if (!ch.length) { $('#serr', el).textContent = 'Pilih minimal satu PO.'; return; }
-    const left = new Map(), groups = new Map(); let skipped = 0;
-    for (const x of ch.slice().sort((a, b) => (a.po.date || '').localeCompare(b.po.date || '') || a.po.poNo.localeCompare(b.po.poNo))) {
-      const k = x.po.customerId || '-'; if (!groups.has(k)) groups.set(k, { party: custMap.get(k)?.name || '', lines: [], pos: [] });
-      const g = groups.get(k); let first = true;
-      for (const l of x.inf.lines) {
-        if (l.sisa <= 0) continue; if (l.st.k === 'KURANG') { skipped++; continue; } if (!left.has(l.partId)) left.set(l.partId, Math.max(0, stock(l.partId)));
-        const q = Math.min(l.sisa, left.get(l.partId)); if (q <= 0) { skipped++; continue; }
-        left.set(l.partId, left.get(l.partId) - q); g.lines.push({ partId: l.partId, qty: q, po: first ? x.po.poNo : '' }); first = false;
-      }
-      g.pos.push(x.po.poNo); if (x.ready < x.open) g.par = true;
+    const bl = ch.slice().sort((a, b) => gOf(a).localeCompare(gOf(b), 'id') || (a.po.date || '').localeCompare(b.po.date || '') || a.po.poNo.localeCompare(b.po.poNo)).map(x => ({ po: x.po, c: x.c, par: x.ready < x.open, lines: [] }));
+    const left2 = new Map(); let skipped2 = 0;
+    for (const bk of bl) for (const l of poInfo(bk.po).lines) {
+      if (l.sisa <= 0) continue; if (l.st.k === 'KURANG') { skipped2++; continue; } if (!left2.has(l.partId)) left2.set(l.partId, Math.max(0, stock(l.partId)));
+      const q = Math.min(l.sisa, left2.get(l.partId)); if (q <= 0) { skipped2++; continue; }
+      left2.set(l.partId, left2.get(l.partId) - q); bk.lines.push({ partId: l.partId, qty: q });
     }
-    const queue = [...groups.values()].filter(g => g.lines.length);
-    if (!queue.length) { $('#serr', el).textContent = 'Stok tidak cukup untuk PO yang dipilih.'; return; }
-    m.close(); if (skipped) toast(`${skipped} baris dilewati (part kurang/stok habis) dan tetap menjadi sisa PO.`);
-    const run = i => { if (i >= queue.length) return; const g = queue[i];
-      openTx('out', { kind: 'SOLD CUSTOMER', party: g.party, note: 'Pengiriman PO ' + g.pos.join(', '), lines: g.lines, title: (queue.length > 1 ? `Dokumen ${i + 1} dari ${queue.length}` : g.pos.length + ' PO') + (g.par ? ' · PARALEL' : ''), onDone: ok => { if (ok) run(i + 1); else if (i + 1 < queue.length) toast('Sisa dokumen dibatalkan. Ulangi dari Barang Keluar Gabungan.'); } }); };
-    setTimeout(() => run(0), 50);
+    const use = bl.filter(b => b.lines.length);
+    if (!use.length) { $('#serr', el).textContent = 'Stok tidak cukup untuk PO yang dipilih.'; return; }
+    m.close(); if (skipped2) toast(`${skipped2} baris dilewati (part kurang/stok habis) dan tetap menjadi sisa PO.`);
+    setTimeout(() => sendBatchForm(use), 50);
   });
 }
 function pickSelect() {
