@@ -218,7 +218,7 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .sb{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff}.sb-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;background:#f6f7f9;flex-wrap:wrap}.sb-h label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut);font-weight:600;min-width:220px}.sb-h .sdoc{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:13px ui-monospace,Menlo,Consolas,monospace;background:#fff}
 .sbt{width:100%;border-collapse:collapse}.sbt td{padding:7px 12px;border-top:1px solid #eef0f3;font-size:13px}.sbt .sq{width:78px;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;text-align:right}.sbt td.n{text-align:right;white-space:nowrap}.sb-bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:6px 0 10px}
 @media(max-width:720px){.sbt td.sbd{display:none}.sb-h label{min-width:0;width:100%}}
-.rvbox{background:#1b1c1f;border-radius:12px;padding:6px 4px 2px;margin-top:4px}.rvsvg{display:block;height:auto}
+.rvbox{margin-top:4px}.rvsvg{display:block;height:auto}
 .chd{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.chd h2{margin:0}.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg button{border:0;background:#fff;padding:6px 14px;font:600 12.5px inherit;cursor:pointer;color:var(--mut)}.seg button.on{background:var(--y);color:#16181d}
 </style>
 </head>
@@ -628,16 +628,16 @@ function revChartSVG(vals, tgM, W) {
   let path = `M${xs[0].toFixed(1)},${ys[0].toFixed(1)}`; for (let i = 0; i < n - 1; i++) { const dx = (xs[i + 1] - xs[i]) / 3; path += ` C${(xs[i] + dx).toFixed(1)},${(ys[i] + mt[i] * dx).toFixed(1)} ${(xs[i + 1] - dx).toFixed(1)},${(ys[i + 1] - mt[i + 1] * dx).toFixed(1)} ${xs[i + 1].toFixed(1)},${ys[i + 1].toFixed(1)}`; }
   const area = `${path} L${xs[n - 1].toFixed(1)},${(pad.t + ph).toFixed(1)} L${xs[0].toFixed(1)},${(pad.t + ph).toFixed(1)} Z`;
   let g = '', lab = '';
-  for (let v = 0; v <= ymax + 1e-6; v += step) { const y = Y(v); g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#2f3136" stroke-width="1"/><text x="${pad.l - 7}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#a8acb3" font-size="${fs - 0.5}">${ax(v)}</text>`; }
+  for (let v = 0; v <= ymax + 1e-6; v += step) { const y = Y(v); g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e6e8ec" stroke-width="1"/><text x="${pad.l - 7}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#7b808a" font-size="${fs - 0.5}">${ax(v)}</text>`; }
   for (let i = 0; i < n; i++) {
-    g += `<line x1="${xs[i].toFixed(1)}" x2="${xs[i].toFixed(1)}" y1="${pad.t}" y2="${pad.t + ph}" stroke="#26282c" stroke-width="1"/><text x="${xs[i].toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="#c9ccd1" font-size="${fs}">${BULAN[i]}</text>`;
-    const lo = (i > 0 && vals[i] < vals[i - 1]) && (i < n - 1 && vals[i] < vals[i + 1]), below = lo || (i === n - 1 && vals[i] <= vals[i - 1] && vals[i] < ymax * 0.3);
-    const ty = below ? ys[i] + 19 : ys[i] - 11; lab += `<text x="${xs[i].toFixed(1)}" y="${Math.max(12, ty).toFixed(1)}" text-anchor="middle" fill="#fff" font-size="${fs}" font-weight="700" paint-order="stroke" stroke="#16181b" stroke-width="3" stroke-linejoin="round">${vals[i] > 0 ? jt(vals[i]) : '0'}</text>`;
+    g += `<line x1="${xs[i].toFixed(1)}" x2="${xs[i].toFixed(1)}" y1="${pad.t}" y2="${pad.t + ph}" stroke="#f0f1f4" stroke-width="1"/><text x="${xs[i].toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="#555b66" font-size="${fs}">${BULAN[i]}</text>`;
+    const lo = (i > 0 && vals[i] < vals[i - 1]) && (i < n - 1 && vals[i] < vals[i + 1]), below = (lo || (i === n - 1 && vals[i] <= vals[i - 1] && vals[i] < ymax * 0.3)) && ys[i] + 19 < pad.t + ph - 4;
+    const ty = below ? ys[i] + 19 : ys[i] - 11; lab += `<text x="${xs[i].toFixed(1)}" y="${Math.max(12, ty).toFixed(1)}" text-anchor="middle" fill="#16181d" font-size="${fs}" font-weight="700" paint-order="stroke" stroke="#fff" stroke-width="3" stroke-linejoin="round">${vals[i] > 0 ? jt(vals[i]) : '0'}</text>`;
   }
-  const dots = vals.map((v, i) => `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${narrow ? 3.5 : 4.5}" fill="#3f8f1e" stroke="#16181b" stroke-width="1.5"><title>${BULAN[i]}: ${fmtRp(v)}</title></circle>`).join('');
-  const tg = tgM > 0 ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${Y(tgM).toFixed(1)}" y2="${Y(tgM).toFixed(1)}" stroke="#ff6b6b" stroke-width="1.6" stroke-dasharray="6 5"/>` : '';
-  const lg = `<rect x="${W / 2 - 62}" y="9" width="22" height="12" rx="3" fill="#1d2a17" stroke="#4aa023" stroke-width="2.5"/><text x="${W / 2 - 34}" y="19.5" fill="#d5d8dc" font-size="${fs + 0.5}">Estimated Revenue</text>`;
-  return `<svg class="rvsvg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Tren revenue bulanan"><defs><linearGradient id="rvg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f8f1e" stop-opacity=".38"/><stop offset="1" stop-color="#3f8f1e" stop-opacity=".03"/></linearGradient></defs>${g}${tg}<path d="${area}" fill="url(#rvg)"/><path d="${path}" fill="none" stroke="#3f8f1e" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>${dots}${lab}${lg}</svg>`;
+  const dots = vals.map((v, i) => `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${narrow ? 3.5 : 4.5}" fill="#f5b400" stroke="#fff" stroke-width="2"><title>${BULAN[i]}: ${fmtRp(v)}</title></circle>`).join('');
+  const tg = tgM > 0 ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${Y(tgM).toFixed(1)}" y2="${Y(tgM).toFixed(1)}" stroke="#e5484d" stroke-width="1.6" stroke-dasharray="6 5"/>` : '';
+  const lg = `<rect x="${W / 2 - 62}" y="9" width="22" height="12" rx="3" fill="#fff4cc" stroke="#f5b400" stroke-width="2.5"/><text x="${W / 2 - 34}" y="19.5" fill="#555b66" font-size="${fs + 0.5}">Estimated Revenue</text>`;
+  return `<svg class="rvsvg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Tren revenue bulanan"><defs><linearGradient id="rvg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f5b400" stop-opacity=".35"/><stop offset="1" stop-color="#f5b400" stop-opacity=".02"/></linearGradient></defs>${g}${tg}<path d="${area}" fill="url(#rvg)"/><path d="${path}" fill="none" stroke="#f5b400" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>${dots}${lab}${lg}</svg>`;
 }
 
 /* ============ DASHBOARD ============ */
