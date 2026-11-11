@@ -199,6 +199,7 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
   #tbl .cekt td.pn::before,#tbl .cekt td.dt::before{display:none}#tbl .cekt td.pn{font-size:15px}
   #tbl .cekt td.n{text-align:left}
 }
+.age{display:inline-block;min-width:54px;text-align:center;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;background:#eef1f5;color:#4b5563}.age.a2{background:#fff3d6;color:#a16207}.age.a3{background:#fde4e4;color:#b91c1c}
 </style>
 </head>
 <body>
@@ -2173,16 +2174,24 @@ function viewPO() {
       if (a === 'pickall') pickSelect();
       if (a === 'xpo') importPOFromSOH();
       if (a === 'view') poDetail(id);
-      if (a === 'csv') exportCSV('po-customer', [['TGL PO', 'NOMOR PO/QT', 'PLANT', 'PART NUMBER', 'CUSTOMER', 'BIN', 'DETAIL', 'QTY', 'KET', 'FREE', 'STOCK', 'STATUS', 'DELIVERY', 'REQ'],
-        ...rows.flatMap(p => poInfo(p).lines.map(l => { const pt = partMap.get(l.partId) || {}; return [fmtD(p.date), p.poNo, p.plant || '', pt.partNo, custMap.get(p.customerId)?.name || '', pt.location, pt.name, l.qty, l.ket === 'C' ? 'C' : (l.kurang ? -l.kurang : ''), l.free, l.stk, l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k, l.dv, l.req || '']; }))]);
+      if (a === 'csv') exportCSV('po-customer', [['TGL PO', 'UMUR PO (HARI)', 'NOMOR PO/QT', 'PLANT', 'PART NUMBER', 'CUSTOMER', 'BIN', 'DETAIL', 'QTY', 'KET', 'FREE', 'STOCK', 'STATUS', 'DELIVERY', 'REQ'],
+        ...rows.flatMap(p => poInfo(p).lines.map(l => { const pt = partMap.get(l.partId) || {}; return [fmtD(p.date), poInfo(p).open ? poAge(p) : '', p.poNo, p.plant || '', pt.partNo, custMap.get(p.customerId)?.name || '', pt.location, pt.name, l.qty, l.ket === 'C' ? 'C' : (l.kurang ? -l.kurang : ''), l.free, l.stk, l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k, l.dv, l.req || '']; }))]);
     },
     fill() {
       const q = F.po.q.toLowerCase();
       rows = S.pos.filter(p => { const i = poInfo(p); return (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipacking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); })
         .sort((a, b) => { const k = F.po.sort, d = (b.date + b.poNo).localeCompare(a.date + a.poNo); if (k === 'old') return -d; if (k === 'hi') return (poInfo(b).val || 0) - (poInfo(a).val || 0) || d; if (k === 'lo') return (poInfo(a).val || 0) - (poInfo(b).val || 0) || d; return d; });
-      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. PO/QT</th><th>Tgl PO</th><th>Customer</th><th>Plant</th><th class="n">Item</th><th>Progres kirim</th><th>Kesiapan stok</th><th class="n">Nilai</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const i = poInfo(p); const pct = i.ord ? Math.round(i.del / i.ord * 100) : 0; return `<tr><td class="mono"><b>${esc(p.poNo)}</b></td><td>${fmtD(p.date)}</td><td>${esc(custMap.get(p.customerId)?.name || '—')}</td><td>${esc(p.plant || '')}</td><td class="n">${(p.items || []).length}</td><td><div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${fmtN(i.del)}/${fmtN(i.ord)} unit</small></td><td>${!i.open ? '<span class="mut">—</span>' : i.short ? `<span class="chip bad">${i.short} baris KURANG</span>` : p.picked ? '<span class="chip info" title="Dipacking oleh ' + esc(p.picked.by || '') + '">SUDAH DIPACKING</span>' : '<span class="chip ok">LENGKAP</span>'}</td><td class="n">${fmtRp(i.val)}</td><td><span class="chip ${i.st.c}">${i.st.k}</span>${p.cancelReq && p.status !== 'batal' ? ' <span class="chip warn" title="Diajukan oleh ' + esc(p.cancelReq.by || '') + '">MENUNGGU KONFIRMASI BATAL</span>' : ''}</td><td class="act"><button class="btn sm" data-act="view" data-id="${p.id}">Detail</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.pos.length ? 'Tidak ada PO yang cocok.' : (loaded.pos ? 'Belum ada PO customer. Klik “+ PO Customer”.' : 'Memuat…'));
+      $('#tbl').innerHTML = rows.length ? `<table><thead><tr><th>No. PO/QT</th><th>Tgl PO</th><th class="n">Umur PO</th><th>Customer</th><th>Plant</th><th class="n">Item</th><th>Progres kirim</th><th>Kesiapan stok</th><th class="n">Nilai</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(p => { const i = poInfo(p); const pct = i.ord ? Math.round(i.del / i.ord * 100) : 0; return `<tr><td class="mono"><b>${esc(p.poNo)}</b></td><td>${fmtD(p.date)}</td><td class="n">${ageChip(p, i)}</td><td>${esc(custMap.get(p.customerId)?.name || '—')}</td><td>${esc(p.plant || '')}</td><td class="n">${(p.items || []).length}</td><td><div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${fmtN(i.del)}/${fmtN(i.ord)} unit</small></td><td>${!i.open ? '<span class="mut">—</span>' : i.short ? `<span class="chip bad">${i.short} baris KURANG</span>` : p.picked ? '<span class="chip info" title="Dipacking oleh ' + esc(p.picked.by || '') + '">SUDAH DIPACKING</span>' : '<span class="chip ok">LENGKAP</span>'}</td><td class="n">${fmtRp(i.val)}</td><td><span class="chip ${i.st.c}">${i.st.k}</span>${p.cancelReq && p.status !== 'batal' ? ' <span class="chip warn" title="Diajukan oleh ' + esc(p.cancelReq.by || '') + '">MENUNGGU KONFIRMASI BATAL</span>' : ''}</td><td class="act"><button class="btn sm" data-act="view" data-id="${p.id}">Detail</button></td></tr>`; }).join('')}</tbody></table>` : empty(S.pos.length ? 'Tidak ada PO yang cocok.' : (loaded.pos ? 'Belum ada PO customer. Klik “+ PO Customer”.' : 'Memuat…'));
     }
   };
+}
+/* Umur PO = selisih hari dari tanggal PO sampai hari ini; hanya dihitung untuk PO yang masih berjalan. */
+function poAge(p) { const d = new Date((p.date || '') + 'T00:00:00'), t = new Date(today() + 'T00:00:00'); return isNaN(d) ? null : Math.max(0, Math.round((t - d) / 86400000)); }
+function ageChip(p, i) {
+  if (!i.open) return '<span class="mut" title="PO sudah selesai/dibatalkan">—</span>';
+  const n = poAge(p); if (n == null) return '<span class="mut">—</span>';
+  const c = n > 14 ? 'a3' : n > 7 ? 'a2' : 'a1';
+  return `<span class="age ${c}" title="Dihitung dari tanggal PO ${esc(fmtD(p.date))}">${n === 0 ? 'Hari ini' : n + ' hari'}</span>`;
 }
 function quickAddPart(partNo0, onDone) {
   if (!canPO) return denied();
