@@ -190,6 +190,15 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 #app.nosb #side{display:none}#app.nosb #main{max-width:none}#sbtog{margin-right:10px;font-size:18px;line-height:1;padding:6px 10px}#top{display:flex;align-items:center}#top h1{flex:1;margin:0}
 @media(max-width:820px){#app{flex-direction:column}#side{width:100%;height:auto;position:static}nav{flex-direction:row;overflow-x:auto;padding:8px}nav a{white-space:nowrap}nav .sep{display:none}.brand{padding:12px 14px}#main{padding:16px 14px 50px;min-width:0}#top{padding:10px 12px;gap:8px}#top h1{font-size:15.5px;flex:1 1 auto;min-width:0;line-height:1.2}#who{display:none}.top-r{display:flex;gap:6px;align-items:center;flex:none}#sbtog{margin-right:0}}
 .chk-inline{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;white-space:nowrap;padding:0 4px}.chk-inline input{width:auto;padding:0;border:0;margin:0;accent-color:var(--y)}
+@media(max-width:720px){
+  #tbl .cekt,#tbl .cekt tbody{display:block;width:100%}#tbl .cekt thead{display:none}
+  #tbl .cekt tr{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  #tbl .cekt td{display:block;border:0;padding:0;text-align:left;min-width:0;white-space:normal}
+  #tbl .cekt td[data-l]::before{content:attr(data-l);display:block;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--mut);margin-bottom:1px}
+  #tbl .cekt td.pn,#tbl .cekt td.dt{grid-column:1/-1}
+  #tbl .cekt td.pn::before,#tbl .cekt td.dt::before{display:none}#tbl .cekt td.pn{font-size:15px}
+  #tbl .cekt td.n{text-align:left}
+}
 </style>
 </head>
 <body>
@@ -2748,7 +2757,7 @@ function viewCek() {
     act(a) {
       if (a === 'clear') { F.cek.text = ''; $('#paste').value = ''; out = []; this.fill(); }
       if (a === 'run') { F.cek.text = $('#paste').value; this.fill(); }
-      if (a === 'csv') exportCSV('cek-stok', [['PART NUMBER', 'DETAIL', 'REQ QTY', 'BIN LOC', 'STOK', 'STOK FREE', 'STOCK MIN', 'MOVEMENT', 'KETERANGAN'], ...out.map(r => [r.raw, r.p?.name || '', r.req, r.p?.location || '', r.p ? r.soh : '', r.p ? r.free : '', r.min ?? '', r.mv || '', r.ket])]);
+      if (a === 'csv') exportCSV('cek-stok', [['PART NUMBER', 'DETAIL', 'REQ QTY', 'BIN LOC', 'MODEL', 'MOVEMENT', 'STOK FREE', 'BISA DIMINTA?'], ...out.map(r => [r.raw, r.p?.name || '', r.req, r.p?.location || '', r.p?.model || '', r.mv || '', r.p ? r.free : '', r.ket])]);
     },
     fill() {
       const A = analysisNow(); out = [];
@@ -2759,7 +2768,7 @@ function viewCek() {
         if (!p) { out.push({ raw, req, ket: 'TIDAK DITEMUKAN' }); continue; }
         out.push({ raw, p, req, soh: a.soh, free: a.free, min: a.min, mv: a.mv, ket: a.free >= req ? 'BISA' : (a.soh >= req ? 'TIDAK (stok tersisa untuk PO lain)' : 'TIDAK') });
       }
-      $('#tbl').innerHTML = out.length ? `<table><thead><tr><th>Part number</th><th>Detail</th><th class="n">Req qty</th><th>Bin</th><th class="n">Stok</th><th class="n">Stok free</th><th class="n">Stock min</th><th>Movement</th><th>Keterangan</th></tr></thead><tbody>${out.map(r => `<tr><td class="mono"><b>${esc(r.p?.partNo || r.raw)}</b></td><td>${esc(r.p?.name || '')}</td><td class="n">${fmtN(r.req)}</td><td>${esc(r.p?.location || '')}</td><td class="n">${r.p ? fmtN(r.soh) : ''}</td><td class="n ${r.p && r.free < 0 ? 'out' : ''}">${r.p ? fmtN(r.free) : ''}</td><td class="n">${r.p ? fmtN(r.min) : ''}</td><td>${r.mv ? `<span class="chip ${mvChip(r.mv)}">${r.mv}</span>` : ''}</td><td><span class="chip ${r.ket === 'BISA' ? 'ok' : r.ket.startsWith('TIDAK (') ? 'warn' : 'bad'}">${esc(r.ket)}</span></td></tr>`).join('')}</tbody></table>` : empty('Belum ada yang dicek.');
+      $('#tbl').innerHTML = out.length ? `<table class="cekt"><thead><tr><th>Part number</th><th>Detail</th><th class="n">Req qty</th><th>Bin</th><th>Model</th><th>Movement</th><th class="n">Stok free</th><th>Bisa diminta?</th></tr></thead><tbody>${out.map(r => `<tr><td class="mono pn" data-l="Part number"><b>${esc(r.p?.partNo || r.raw)}</b></td><td class="dt" data-l="Detail">${esc(r.p?.name || '')}</td><td class="n" data-l="Req qty">${fmtN(r.req)}</td><td data-l="Bin">${esc(r.p?.location || '')}</td><td data-l="Model">${esc(r.p?.model || '')}</td><td data-l="Movement">${r.mv ? `<span class="chip ${mvChip(r.mv)}">${r.mv}</span>` : ''}</td><td class="n ${r.p && r.free < 0 ? 'out' : ''}" data-l="Stok free">${r.p ? fmtN(r.free) : ''}</td><td class="ok2" data-l="Bisa diminta?"><span class="chip ${r.ket === 'BISA' ? 'ok' : r.ket.startsWith('TIDAK (') ? 'warn' : 'bad'}">${esc(r.ket)}</span></td></tr>`).join('')}</tbody></table>` : empty('Belum ada yang dicek.');
     }
   };
 }
