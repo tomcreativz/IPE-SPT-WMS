@@ -2441,9 +2441,14 @@ function parsePasted(text) {
   const grid = lines.map(split), isNum = c => /^-?[\d.,]+$/.test(c) && /\d/.test(c);
   let hdr = null; if (grid.length && !grid[0].some(isNum) && grid[0].some(c => /material|part|qty|quantity|jumlah|desc|text|kuantitas|menge/i.test(c))) hdr = grid.shift();
   const col = re => hdr ? hdr.findIndex(c => re.test(c)) : -1;
-  const qc = col(/^(qty|quantity|jumlah|kuantitas|menge|order qty|gr qty|received)/i), pc = col(/material|part ?n|part ?no|no\.? ?part|kode/i), dc = col(/desc|text|nama|deskripsi/i);
+  const OLD = /lama|old|catalog|katalog|\bbp\b|supersess|alt/i, colx = (re, ex) => hdr ? hdr.findIndex(c => re.test(c) && !(ex && ex.test(c))) : -1;
+  const qc = col(/^(qty|quantity|jumlah|kuantitas|menge|order qty|gr qty|received)/i);
+  /* kolom part number: utamakan "Item No." (SAP), lalu Material/Part No; "Kode Parts Lama", "BP Catalog No." dan sejenisnya TIDAK dipakai */
+  let pc = colx(/^item ?(no|code|number)\b|^no\.? ?item|^itemcode/i, OLD); if (pc < 0) pc = colx(/material|part ?n|part ?no|no\.? ?part/i, OLD); if (pc < 0) pc = colx(/kode|code/i, OLD);
+  const dc = col(/desc|text|nama|deskripsi/i);
   const out = [], bad = [];
   for (const cells of grid) {
+    if (pc >= 0 && !(cells[pc] || '').trim() && !(qc >= 0 && numID(cells[qc] || '') > 0)) continue; /* baris kosong/total dari SAP */
     let pi = pc >= 0 && cells[pc] ? pc : -1;
     if (pi < 0) pi = cells.findIndex(c => c && find(c));
     if (pi < 0) pi = cells.findIndex(c => /^[A-Z0-9][A-Z0-9.\-]*\/[A-Z0-9.\-\/]+$/i.test(c));
