@@ -346,7 +346,7 @@ function poInfo(po) {
   const short = lines.filter(l => l.st.k === 'KURANG').length;
   let st = { k: 'Terbuka', c: 'info' };
   if (po.status === 'batal') st = { k: 'Dibatalkan', c: 'gray' };
-  else if (lines.length && lines.every(l => l.sisa === 0)) st = { k: 'Selesai', c: 'ok' };
+  else if (lines.length && lines.every(l => l.sisa === 0)) st = { k: 'Delivery Done', c: 'ok' };
   else if (del > 0) st = { k: 'Sebagian', c: 'warn' };
   return { lines, d: new Map(lines.map(l => [l.partId, l.d])), ord, del, val, short, st, open: st.k === 'Terbuka' || st.k === 'Sebagian' };
 }
@@ -2255,7 +2255,7 @@ function viewPO() {
   return {
     shell: `${ro(true)}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
-      <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Selesai', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipacking', 'Stok kurang', 'Pengajuan batal'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Delivery Done', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipacking', 'Stok kurang', 'Pengajuan batal'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
       <select id="posort" title="Urutkan daftar PO"><option value="" ${F.po.sort === '' ? 'selected' : ''}>Urutan: Terbaru</option><option value="old" ${F.po.sort === 'old' ? 'selected' : ''}>Urutan: Terlama</option><option value="hi" ${F.po.sort === 'hi' ? 'selected' : ''}>Urutan: Nilai tertinggi</option><option value="lo" ${F.po.sort === 'lo' ? 'selected' : ''}>Urutan: Nilai terendah</option></select>
       <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="pickall">Picking Gabungan</button>${canWrite ? '<button class="btn" data-act="sendall" title="Buat satu Barang Keluar dari beberapa PO">📦 Barang Keluar Gabungan</button>' : ''}${canWrite ? '<button class="btn" data-act="reqbr" title="Tanyakan part yang kurang ke cabang">📤 Minta ke Cabang</button>' : ''}${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
@@ -2452,7 +2452,7 @@ function poDetail(id) {
   ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td>${esc(x.kind)}</td><td>${esc(x.ekspedisi || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button>${canWrite && inf.open && inf.short ? '<button class="btn primary" data-x="reqbr">📤 Minta ke Cabang</button>' : ''}<button class="btn" data-x="sapp">Salin Part</button><button class="btn" data-x="sapq">Salin Qty</button>${inf.open && !inf.short && inf.lines.some(l => l.sisa > 0) ? '<button class="btn" data-x="pick">Picking List</button>' : ''}${canWrite && inf.open && !inf.short ? (po.picked ? '<button class="btn" data-x="unpicked">Batal tandai dipacking</button>' : '<button class="btn" data-x="picked">✓ Tandai sudah dipacking</button>') : ''}
   ${canWrite && inf.open ? '<button class="btn primary" data-x="send">Buat Barang Keluar</button>' : ''}${canPO ? '<button class="btn" data-x="edit">Edit</button>' : ''}
-  ${canPO && po.status !== 'batal' && inf.st.k !== 'Selesai' ? (canWrite ? (po.cancelReq ? '<button class="btn danger" data-x="cancel">Setujui pembatalan</button><button class="btn" data-x="rejcancel">Tolak pengajuan</button>' : '<button class="btn" data-x="cancel">Batalkan PO</button>') : (po.cancelReq ? '<button class="btn" data-x="rejcancel">Tarik pengajuan batal</button>' : '<button class="btn" data-x="reqcancel">Ajukan pembatalan</button>')) : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
+  ${canPO && po.status !== 'batal' && inf.st.k !== 'Delivery Done' ? (canWrite ? (po.cancelReq ? '<button class="btn danger" data-x="cancel">Setujui pembatalan</button><button class="btn" data-x="rejcancel">Tolak pengajuan</button>' : '<button class="btn" data-x="cancel">Batalkan PO</button>') : (po.cancelReq ? '<button class="btn" data-x="rejcancel">Tarik pengajuan batal</button>' : '<button class="btn" data-x="reqcancel">Ajukan pembatalan</button>')) : ''}${canPO && po.status === 'batal' ? '<button class="btn" data-x="reopen">Aktifkan lagi</button>' : ''}
   ${isFull ? '<button class="btn danger" data-x="del">Hapus</button>' : ''}<button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('xw');
   m.el.addEventListener('change', async e => {
