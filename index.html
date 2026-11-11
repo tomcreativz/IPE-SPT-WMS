@@ -209,6 +209,9 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
   #tbl .cekt td.n{text-align:left}
 }
 .age{display:inline-block;min-width:54px;text-align:center;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;background:#eef1f5;color:#4b5563}.age.a2{background:#fff3d6;color:#a16207}.age.a3{background:#fde4e4;color:#b91c1c}
+.mn{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff}.mn-h{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}.mn-h span:nth-child(2){color:var(--mut);font-size:13px;flex:1;min-width:140px}.mn-b{font-size:13px;margin:8px 0}
+.mn-f{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#f3f4f6;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px}.mn-f.lk{background:#fff8e1;border:1px solid #f5d37a}.mn-f button{flex:none}.mn-a{margin-top:6px}
+@media(max-width:720px){.mn-f{flex-direction:column;align-items:stretch}}
 </style>
 </head>
 <body>
@@ -1967,6 +1970,62 @@ function ledgerFor(partId) {
   const rows = S.movements.filter(m => m.partId === partId).sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.seq ?? 1e9) - (b.seq ?? 1e9)) || (a.at || '').localeCompare(b.at || ''));
   let bal = 0; return rows.map(m => { const i = m.dir === 'in' ? m.qty : 0, o = m.dir === 'out' ? m.qty : 0; bal += i - o; return { ...m, i, o, bal }; });
 }
+/* ===== Pemeriksa stok minus: cari part yang saldo kartu stoknya pernah minus & duga tanggal yang keliru ===== */
+const swapDM = d => { if (!/^\d{4}-\d{2}-\d{2}$/.test(d || '')) return null; const dd = d.slice(8, 10), mm = d.slice(5, 7); return +dd <= 12 && dd !== mm ? `${d.slice(0, 4)}-${dd}-${mm}` : null; };
+const dayBefore = d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() - 1); return t.toISOString ? `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}` : d; };
+function minusScan() {
+  const by = new Map(); for (const m of S.movements) { if (!by.has(m.partId)) by.set(m.partId, []); by.get(m.partId).push(m); }
+  const res = [];
+  for (const [pid, list] of by) {
+    const p = partMap.get(pid); if (!p) continue;
+    const led = ledgerFor(pid), k = led.findIndex(r => r.bal < 0); if (k < 0) continue;
+    const neg = led[k], final = led[led.length - 1].bal, short = -neg.bal, fixes = [];
+    const ins = led.slice(k + 1).filter(r => r.dir === 'in' && !isOpening(r)), c = ins.find(r => r.qty >= short) || ins[0];
+    if (neg.dir === 'out' && c) {
+      const sc = swapDM(c.date), so = swapDM(neg.date);
+      if (sc && sc <= neg.date) fixes.push({ id: c.id, date: sc, likely: true, txt: `Barang masuk ${c.docNo || '(tanpa dokumen)'} (${fmtN(c.qty)} pcs) tgl ${fmtD(c.date)} → kemungkinan seharusnya ${fmtD(sc)} (hari dan bulan tertukar)` });
+      if (so && so >= c.date) fixes.push({ id: neg.id, date: so, likely: true, txt: `Barang keluar ${neg.docNo || '(tanpa dokumen)'} tgl ${fmtD(neg.date)} → kemungkinan seharusnya ${fmtD(so)} (hari dan bulan tertukar)` });
+      if (!fixes.length) fixes.push({ id: c.id, date: dayBefore(neg.date), likely: false, txt: `Barang masuk ${c.docNo || '(tanpa dokumen)'} (${fmtN(c.qty)} pcs) baru tercatat tgl ${fmtD(c.date)}, padahal barang keluar sudah ${fmtD(neg.date)}. Cek tanggal terima yang sebenarnya.` });
+    }
+    res.push({ p, neg, final, short, fixes, likely: fixes.some(f => f.likely), now: final < 0 });
+  }
+  return res.sort((a, b) => (b.likely - a.likely) || byText(a.p.partNo, b.p.partNo));
+}
+function fixMoveDate(id, date, done) {
+  if (!canWrite) return denied();
+  const x = S.movements.find(m => m.id === id); if (!x) return;
+  const mm = modal(`<h3>Ubah tanggal transaksi</h3><p class="mut" style="font-size:13px">${esc(partMap.get(x.partId)?.partNo || '')} · ${x.dir === 'in' ? 'Masuk' : 'Keluar'} ${esc(x.docNo || '')} · ${fmtN(x.qty)} pcs<br>Tanggal sekarang: <b>${esc(fmtD(x.date))}</b></p>
+  <label class="mut" style="display:block;margin-bottom:6px">Tanggal baru</label><input type="date" id="nd" value="${esc(date)}" style="padding:10px;border:1px solid #d1d5db;border-radius:8px">
+  <div class="err" id="ne" style="color:#b91c1c;margin-top:8px"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan</button></div>`);
+  mm.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]'); if (!b) return;
+    if (b.dataset.x === 'c') return mm.close();
+    const nd = $('#nd', mm.el).value; if (!nd) { $('#ne', mm.el).textContent = 'Pilih tanggal.'; return; }
+    const bad = [x.date, nd].find(d => closedSet.has((d || '').slice(0, 7))); if (bad) { $('#ne', mm.el).textContent = lockMsg(bad); return; }
+    if (await guarded(() => db.doc('movements/' + id).update({ date: nd, updatedAt: nowISO() }))) { toast('Tanggal diperbarui'); mm.close(); done && done(); }
+  });
+}
+function minusModal(openKartu) {
+  const render = () => {
+    const R = minusScan(), only = $('#mlk', m.el)?.checked;
+    const L = only ? R.filter(x => x.likely) : R;
+    $('#msum', m.el).innerHTML = R.length ? `<b>${R.length}</b> part pernah bersaldo minus · <b>${R.filter(x => x.now).length}</b> masih minus sekarang · <b>${R.filter(x => x.likely).length}</b> dengan dugaan tanggal tertukar` : '';
+    $('#mbody', m.el).innerHTML = L.length ? L.map(x => `<div class="mn"><div class="mn-h"><b class="mono">${esc(x.p.partNo)}</b><span>${esc(x.p.name)}</span><span class="chip ${x.now ? 'bad' : 'warn'}">${x.now ? 'Minus sekarang (' + fmtN(x.final) + ')' : 'Minus sementara'}</span></div>
+      <div class="mn-b">Pertama kali minus: <b>${esc(fmtD(x.neg.date))}</b>, ${x.neg.dir === 'out' ? 'keluar' : 'masuk'} ${esc(x.neg.docNo || '')} ${fmtN(x.neg.qty)} pcs, saldo jadi <b style="color:#b91c1c">${fmtN(x.neg.bal)}</b>. Saldo kini: <b>${fmtN(x.final)}</b>.</div>
+      ${x.fixes.map(f => `<div class="mn-f ${f.likely ? 'lk' : ''}"><span>${f.likely ? '💡 ' : 'ℹ️ '}${esc(f.txt)}</span>${canWrite ? `<button class="btn sm" data-fix="${f.id}" data-d="${f.date}">Ubah ke ${esc(fmtD(f.date))}</button>` : ''}</div>`).join('')}
+      <div class="mn-a"><button class="btn sm" data-kc="${x.p.id}">Buka kartu stok</button></div></div>`).join('') : `<div class="mut" style="padding:24px;text-align:center">${R.length ? 'Tidak ada yang cocok dengan filter.' : '✅ Tidak ada part dengan saldo minus.'}</div>`;
+  };
+  const m = modal(`<h3>Cek Stok Minus</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Mencari part yang saldo kartu stoknya pernah di bawah nol. Penyebab paling umum: tanggal salah ketik (misalnya 11/10 tertukar jadi 10/11), sehingga barang keluar tercatat lebih dulu dari barang masuk. Tanggal hanya diubah setelah Anda menekan tombolnya.</p>
+  <label class="chk-inline" style="margin-bottom:8px"><input type="checkbox" id="mlk"> Hanya yang diduga tanggal tertukar</label><div id="msum" style="font-size:13px;margin:6px 0 10px"></div>
+  <div id="mbody" style="max-height:52vh;overflow:auto"></div><div class="actions"><button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
+  m.el.addEventListener('change', e => { if (e.target.id === 'mlk') render(); });
+  m.el.addEventListener('click', e => {
+    if (e.target.closest('[data-x=c]')) return m.close();
+    const f = e.target.closest('[data-fix]'); if (f) return fixMoveDate(f.dataset.fix, f.dataset.d, render);
+    const k = e.target.closest('[data-kc]'); if (k) { m.close(); openKartu(k.dataset.kc); }
+  });
+  render();
+}
 function kartuRows(cur) {
   const out = []; let first = true;
   if (F.kartu.from) out.push({ date: F.kartu.from, ket: 'STOCK AWAL', remark: '', i: 0, o: 0, bal: cur.open, open: true });
@@ -2000,7 +2059,7 @@ function viewKartu() {
       <label class="mut">Sampai <input type="date" id="to" value="${F.kartu.to}"></label>
       <button class="btn" data-act="reset" title="Kosongkan no. part dan tanggal">Reset</button>
       <span class="grow"></span>
-      <button class="btn" data-act="csv">Export CSV</button><button class="btn primary" data-act="pdf">Unduh PDF</button>
+      <button class="btn" data-act="minus" title="Cari part yang saldonya pernah minus">⚠ Cek Stok Minus</button><button class="btn" data-act="csv">Export CSV</button><button class="btn primary" data-act="pdf">Unduh PDF</button>
     </div><div id="kc"></div>`,
     input(e) {
       if (e.target.id === 'kp') { const p = partFromText(e.target.value); F.kartu.part = p ? p.id : ''; if (p || !e.target.value) this.fill(); }
@@ -2009,6 +2068,7 @@ function viewKartu() {
     },
     act(a) {
       if (a === 'reset') { F.kartu.part = ''; F.kartu.from = ''; F.kartu.to = ''; for (const id of ['kp', 'from', 'to']) { const i = $('#' + id); if (i) i.value = ''; } this.fill(); const kp = $('#kp'); if (kp) kp.focus(); return; }
+      if (a === 'minus') { minusModal(pid => { F.kartu.part = pid; const kp = $('#kp'); if (kp) kp.value = partLabel(partMap.get(pid)); this.fill(); }); return; }
       if (!cur) { toast('Pilih spare part terlebih dahulu.', 'err'); return; }
       const rows = kartuRows(cur);
       if (a === 'csv') exportCSV('kartu-stok-' + cur.p.partNo, [['KARTU STOCK', 'WH IPE Sampit'], ['Part Number', cur.p.partNo], ['Description', cur.p.name], ['Bin Location', cur.p.location || ''], ['Supersession', cur.p.supersession || ''], [], ['DATE', 'KETERANGAN', 'REMARK', 'IN', 'OUT', 'STOCK'], ...rows.map(r => [fmtD(r.date), r.ket, r.remark, r.i || '', r.o || '', r.bal])]);
