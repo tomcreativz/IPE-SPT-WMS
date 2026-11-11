@@ -2189,17 +2189,25 @@ function shipLabel(id) {
   const addr = [c.address, c.city].map(x => (x || '').trim()).filter(Boolean).join('\n');
   const m = modal(`<h3>Cetak Alamat Pengiriman</h3><form id="sl">
     ${fld('Dikirim Kepada', 'nama', { val: c.name, attrs: 'required' })}
-    ${fld('Alamat', 'alamat', { type: 'textarea', val: addr, span: 2 })}
+    ${fld('Alamat', 'alamat', { type: 'textarea', val: addr, span: 2, attrs: 'style="min-height:76px"' })}
     <div class="grid">${fld('Penerima', 'penerima', { val: c.pic || '' })}${fld('Telepon penerima', 'telp', { val: c.phone || '' })}</div>
-    ${fld('Dari (pengirim)', 'dari', { type: 'textarea', val: sd, span: 2 })}
+    ${fld('Dari (pengirim)', 'dari', { type: 'textarea', val: sd, span: 2, attrs: 'style="min-height:100px"' })}
   </form><div class="mut" style="font-size:12px;margin:6px 0">Data dari Database Customer, bisa diubah sebelum dicetak. Isian "Dari" diingat di browser ini.</div>
-  <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="p">Unduh PDF</button></div>`);
+  <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn" data-x="d">Unduh PDF</button><button class="btn primary" data-x="p">🖨 Print</button></div>`);
   m.el.addEventListener('click', e => {
     const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') return m.close();
     const f = $('#sl', m.el); if (!f.reportValidity()) return; const v = Object.fromEntries(new FormData(f));
     try { localStorage.setItem('wms-sender', v.dari); } catch (e2) {}
     const doc = shipLabelPDF(v); if (!doc) return;
-    saveFile(`alamat-${c.name.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40)}.pdf`, doc.output('blob')); m.close();
+    if (b.dataset.x === 'd') { saveFile(`alamat-${c.name.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40)}.pdf`, doc.output('blob')); m.close(); return; }
+    const url = URL.createObjectURL(doc.output('blob')); let done = false;
+    const fallback = () => { if (done) return; done = true; window.open(url, '_blank') || toast('Pop-up diblokir. Izinkan pop-up atau pakai Unduh PDF.', 'err'); };
+    try {
+      const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; fr.src = url;
+      fr.onload = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); done = true; } catch (e2) { fallback(); } setTimeout(() => { fr.remove(); URL.revokeObjectURL(url); }, 60000); };
+      document.body.appendChild(fr);
+    } catch (e3) { fallback(); }
+    m.close();
   });
 }
 
