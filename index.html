@@ -220,6 +220,7 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 @media(max-width:720px){.sbt td.sbd{display:none}.sb-h label{min-width:0;width:100%}}
 .rvbox{margin-top:4px}.rvsvg{display:block;height:auto}
 .chd{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.chd h2{margin:0}.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg button{border:0;background:#fff;padding:6px 14px;font:600 12.5px inherit;cursor:pointer;color:var(--mut)}.seg button.on{background:var(--y);color:#16181d}
+.brall{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;background:#fff8e1;border:1px solid #f5dd8a;border-radius:10px;padding:8px 12px;margin:0 0 10px}.brall select{padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;max-width:190px}
 </style>
 </head>
 <body>
@@ -1229,11 +1230,12 @@ function openTx(dir, preset = {}) {
       if (closedSet.has((v.date || '').slice(0, 7))) { err.textContent = lockMsg(v.date); return; }
       const pl = (dir === 'in' ? S.suppliers : S.customers).find(x => x.name.toLowerCase() === party.toLowerCase());
       const findPOref = r => { const k = (r || '').trim().toLowerCase(); return k ? S.pos.find(p => p.poNo.toLowerCase() === k && p.status !== 'batal') : null; };
-      b.disabled = true;
+      b.disabled = true; let autoRecv = 0;
       const ok = await guarded(async () => {
         const t0 = Date.now(); let ln = 0; for (const l of lines) { const ref = (l.po || v.poRef || '').trim(), po = findPOref(ref); ln++; await db.collection('movements').add({ docNo: (v.docNo.trim() === SOLD_PRE() ? '' : v.docNo.trim()), date: v.date, partId: l.p.id, qty: l.q, dir, kind: v.kind, party, partyId: pl ? pl.id : '', poRef: ref, poId: po ? po.id : '', ekspedisi: (v.ekspedisi || '').trim(), awb: (v.awb || '').trim(), note: (v.note || '').trim(), by: uid, ln, bt: new Date(t0).toISOString(), at: new Date(t0 + ln).toISOString() }); }
+        if (dir === 'in') autoRecv = await brAutoReceive(lines.map(l => ({ partId: l.p.id, q: l.q, po: findPOref((l.po || v.poRef || '').trim()) })).filter(x => x.po));
       });
-      if (ok) { m.close(); toast(`${lines.length} baris tersimpan`); preset.onDone && preset.onDone(true); } else b.disabled = false;
+      if (ok) { m.close(); toast(`${lines.length} baris tersimpan` + (autoRecv ? ` · ${autoRecv} part otomatis berstatus Diterima/Sebagian di Minta Cabang` : '')); preset.onDone && preset.onDone(true); } else b.disabled = false;
     }
   });
 }
@@ -2488,7 +2490,7 @@ function poForm(id) {
   });
 }
 /* ===== Minta ke Cabang: cek ketersediaan part yang kurang lewat WhatsApp + pelacakan status ===== */
-const BR_ST = { ditanyakan: ['Ditanyakan', 'info'], tersedia: ['Tersedia', 'ok'], sebagian: ['Sebagian', 'warn'], tidak: ['Tidak ada', 'bad'], diminta: ['Sudah req', 'warn'], diterima: ['Diterima', 'ok'] };
+const BR_ST = { ditanyakan: ['Ditanyakan', 'info'], tersedia: ['Tersedia', 'ok'], sebagian: ['Sebagian', 'warn'], tidak: ['Tidak ada', 'bad'], naikpr: ['Naik PR', 'info'], diminta: ['Sudah req', 'warn'], diterima: ['Diterima', 'ok'] };
 const BR_HEAD = 'Mohon cek part berikut apakah bisa diminta:';
 const brChip = r => r && BR_ST[r.status] ? `<span class="chip ${BR_ST[r.status][1]}" title="${esc((r.by || '') + ' · ' + fmtD((r.at || '').slice(0, 10)) + (r.qty ? ' · ' + fmtN(r.qty) + ' pcs' : ''))}">${BR_ST[r.status][0]}${r.sup ? ' · ' + esc(r.sup) : ''}</span>` : '';
 const brSupList = () => S.suppliers.map(x => x.name).filter(Boolean).sort(byText);
@@ -2499,6 +2501,25 @@ async function setBranchReq(po, partId, status, qty, sup) {
   const cur = { ...(po.branchReq || {}) };
   if (!status) delete cur[partId]; else { const sp = sup ?? cur[partId]?.sup ?? lastSup(); cur[partId] = { status, qty: qty ?? cur[partId]?.qty ?? 0, sup: sp || '', at: nowISO(), by: ($('#who')?.textContent || myEmail || '').trim() }; if (sp) saveSup(sp); }
   return guarded(() => db.doc('pos/' + po.id).update({ branchReq: cur, updatedAt: nowISO() }));
+}
+/* Barang masuk yang mengacu ke PO customer otomatis memperbarui status "Minta ke Cabang" (Diterima / Sebagian). */
+async function brAutoReceive(items) {
+  const byPo = new Map(); let n = 0;
+  for (const it of items) {
+    const br = it.po.branchReq?.[it.partId]; if (!br || ['diterima', 'tidak'].includes(br.status)) continue;
+    if (!byPo.has(it.po.id)) byPo.set(it.po.id, { po: it.po, add: {}, got: new Map() });
+    const e = byPo.get(it.po.id); e.got.set(it.partId, (e.got.get(it.partId) || 0) + it.q);
+  }
+  for (const e of byPo.values()) {
+    for (const [pid, q] of e.got) {
+      const br = e.po.branchReq[pid], key = e.po.poNo.trim().toLowerCase();
+      const prev = S.movements.filter(x => x.dir === 'in' && x.partId === pid && (x.poRef || '').trim().toLowerCase() === key && !isOpening(x)).reduce((t, x) => t + x.qty, 0);
+      const need = br.qty || 0, full = need <= 0 || prev + q >= need;
+      e.add[pid] = { ...br, status: full ? 'diterima' : 'sebagian', at: nowISO(), by: ($('#who')?.textContent || myEmail || '').trim() }; n++;
+    }
+    await db.doc('pos/' + e.po.id).update({ branchReq: { ...(e.po.branchReq || {}), ...e.add }, updatedAt: nowISO() });
+  }
+  return n;
 }
 function branchReqModal(srcItems) {
   if (!canWrite) return denied();
@@ -2545,6 +2566,7 @@ function poDetail(id) {
   const dels = S.movements.filter(x => x.dir === 'out' && (x.poRef ? x.poRef.trim().toUpperCase() === po.poNo.trim().toUpperCase() : x.poId === id)).sort((a, b) => a.date.localeCompare(b.date));
   const m = modal(`<h3>PO ${esc(po.poNo)} <span class="chip ${inf.st.c}">${inf.st.k}</span>${po.cancelReq && po.status !== 'batal' ? ' <span class="chip warn">MENUNGGU KONFIRMASI BATAL</span>' : ''}</h3>${po.cancelReq && po.status !== 'batal' ? `<div class="banner warn" style="margin:0 0 10px">Pembatalan diajukan oleh <b>${esc(po.cancelReq.by || '-')}</b> pada ${esc(fmtD((po.cancelReq.at || '').slice(0, 10)))}.${po.cancelReq.reason ? ' Alasan: <b>' + esc(po.cancelReq.reason) + '</b>.' : ''} ${canWrite ? 'Warehouseman perlu menyetujui atau menolak.' : 'Menunggu konfirmasi Warehouseman.'}</div>` : ''}
   <dl class="kv"><dt>Customer</dt><dd>${esc(c?.name || '—')}</dd><dt>Plant</dt><dd>${esc(po.plant) || '—'}</dd><dt>Tanggal PO</dt><dd>${fmtD(po.date)}</dd><dt>Catatan</dt><dd>${esc(po.note) || '—'}</dd><dt>Nilai PO</dt><dd>${fmtRp(inf.val)} <span class="mut">(qty × harga master part)</span></dd>${po.picked && inf.open ? `<dt>Picking</dt><dd><span class="chip info">SUDAH DIPACKING</span> <span class="mut">${esc(po.picked.by || '')} · ${fmtD((po.picked.at || '').slice(0, 10))} ${esc((po.picked.at || '').slice(11, 16))}</span></dd>` : ''}</dl>
+  ${canWrite && inf.lines.some(l => l.kurang > 0) ? `<div class="brall"><b>Minta cabang · atur sekaligus</b><span class="mut" style="font-size:12.5px">untuk semua part yang kurang:</span><select id="bast"><option value="">— status —</option>${Object.entries(BR_ST).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select><select id="basp">${brSupOpts(lastSup())}</select><label class="chk-inline"><input type="checkbox" id="bask" checked> lewati yang sudah Diterima</label><button class="btn sm primary" data-x="brall">Terapkan ke semua</button></div>` : ''}
   <div class="tw"><table class="podt"><thead><tr><th>No</th><th>Part Number</th><th>Deskripsi</th><th>Bin</th><th class="n">Qty</th><th class="n">Terkirim</th><th class="n">Sisa</th><th class="n">Stok</th><th class="n">Free</th><th>KET</th><th>Status</th><th>Delivery</th><th>Minta cabang</th></tr></thead><tbody>${inf.lines.map((l, i) => { const p = partMap.get(l.partId); return `<tr><td class="mut">${i + 1}</td><td class="mono" style="white-space:nowrap"><b>${p ? esc(p.partNo) : '(dihapus)'}</b></td><td class="dsc">${esc(p?.name || '')}${l.req ? ` <span class="chip gray" style="margin-left:4px">${esc(l.req)}</span>` : ''}</td><td style="white-space:nowrap">${esc(p?.location || '')}</td><td class="n">${fmtN(l.qty)}</td><td class="n">${fmtN(l.d)}</td><td class="n"><b>${fmtN(l.sisa)}</b></td><td class="n">${fmtN(l.stk)}</td><td class="n ${l.free < 0 ? 'out' : ''}">${fmtN(l.free)}</td><td>${l.ket === 'C' ? 'C' : (l.kurang ? '<span class="out">-' + fmtN(l.kurang) + '</span>' : '')}</td><td><span class="chip ${l.st.c}">${l.st.k}</span></td><td><span class="chip ${l.dv === 'DELIVERED' ? 'ok' : l.dv === 'REQ DONE' ? 'info' : 'gray'}">${l.dv}</span></td><td class="br-c">${l.kurang || po.branchReq?.[l.partId] ? (canWrite ? `<div class="brw" data-pid="${l.partId}" data-q="${l.kurang || ''}"><select class="brs"><option value="">—</option>${Object.entries(BR_ST).map(([k, v]) => `<option value="${k}" ${po.branchReq?.[l.partId]?.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select><select class="brp">${brSupOpts(po.branchReq?.[l.partId]?.sup || '')}</select></div>` : brChip(po.branchReq?.[l.partId]) || '—') : ''}</td></tr>`; }).join('')}</tbody></table></div>
   ${dels.length ? `<h2 style="margin-top:16px">Riwayat pengiriman</h2><div class="tw"><table><tbody>${dels.map(x => `<tr><td>${fmtD(x.date)}</td><td class="mono">${esc(x.docNo)}</td><td>${esc(partMap.get(x.partId)?.partNo || '')}</td><td>${esc(x.kind)}</td><td>${esc(x.ekspedisi || '')}</td><td class="n">${fmtN(x.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   <div class="actions" style="flex-wrap:wrap"><button class="btn" data-x="pdf">Unduh PDF</button>${canWrite && inf.open && inf.short ? '<button class="btn primary" data-x="reqbr">📤 Minta ke Cabang</button>' : ''}<button class="btn" data-x="sapp">Salin Part</button><button class="btn" data-x="sapq">Salin Qty</button>${inf.open && !inf.short && inf.lines.some(l => l.sisa > 0) ? '<button class="btn" data-x="pick">Picking List</button>' : ''}${canWrite && inf.open && !inf.short ? (po.picked ? '<button class="btn" data-x="unpicked">Batal tandai dipacking</button>' : '<button class="btn" data-x="picked">✓ Tandai sudah dipacking</button>') : ''}
@@ -2562,6 +2584,14 @@ function poDetail(id) {
     const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
     if (x === 'c') m.close();
     if (x === 'edit') { m.close(); poForm(id); }
+    if (x === 'brall') {
+      const st = $('#bast', m.el).value, sup = $('#basp', m.el).value, skip = $('#bask', m.el).checked; if (!st) { toast('Pilih status dulu.', 'err'); return; }
+      const cp = poMap.get(id) || po, add = { ...(cp.branchReq || {}) }; let n = 0;
+      for (const l of inf.lines) { if (!(l.kurang > 0)) continue; const cur = add[l.partId]; if (skip && cur?.status === 'diterima') continue; add[l.partId] = { status: st, qty: l.kurang, sup: sup || cur?.sup || '', at: nowISO(), by: ($('#who')?.textContent || myEmail || '').trim() }; n++; }
+      if (!n) { toast('Tidak ada part yang perlu diubah.', 'err'); return; }
+      if (sup) saveSup(sup);
+      if (await guarded(() => db.doc('pos/' + cp.id).update({ branchReq: add, updatedAt: nowISO() }))) { toast(`${n} part: ${BR_ST[st][0]}${sup ? ' · ' + sup : ''}`); m.close(); setTimeout(() => poDetail(id), 150); }
+    }
     if (x === 'reqbr') branchReqModal(inf.lines.filter(l => l.kurang > 0).map(l => ({ po, partId: l.partId, qty: l.kurang })));
     if (x === 'sapp' || x === 'sapq') { const ls = inf.lines.filter(l => l.sisa > 0); copySAP((ls.length ? ls : inf.lines).map(l => [partMap.get(l.partId)?.partNo, ls.length ? l.sisa : l.qty]), 'PO ' + po.poNo + (ls.length ? ' (sisa kirim)' : ''), x === 'sapq' ? 1 : 0); }
     if (x === 'send') {
