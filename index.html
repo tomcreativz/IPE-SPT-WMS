@@ -2490,7 +2490,7 @@ function poForm(id) {
   });
 }
 /* ===== Minta ke Cabang: cek ketersediaan part yang kurang lewat WhatsApp + pelacakan status ===== */
-const BR_ST = { ditanyakan: ['Ditanyakan', 'info'], tersedia: ['Tersedia', 'ok'], sebagian: ['Sebagian', 'warn'], tidak: ['Tidak ada', 'bad'], naikpr: ['Naik PR', 'info'], diminta: ['Sudah req', 'warn'], diterima: ['Diterima', 'ok'] };
+const BR_ST = { ditanyakan: ['Ditanyakan', 'info'], tersedia: ['Tersedia', 'ok'], sebagian: ['Sebagian', 'warn'], naikpr: ['Naik PR', 'info'], diminta: ['Sudah req', 'warn'], diterima: ['Diterima', 'ok'] };
 const BR_HEAD = 'Mohon cek part berikut apakah bisa diminta:';
 const brChip = r => r && BR_ST[r.status] ? `<span class="chip ${BR_ST[r.status][1]}" title="${esc((r.by || '') + ' · ' + fmtD((r.at || '').slice(0, 10)) + (r.qty ? ' · ' + fmtN(r.qty) + ' pcs' : ''))}">${BR_ST[r.status][0]}${r.sup ? ' · ' + esc(r.sup) : ''}</span>` : '';
 const brSupList = () => S.suppliers.map(x => x.name).filter(Boolean).sort(byText);
