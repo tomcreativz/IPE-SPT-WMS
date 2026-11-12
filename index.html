@@ -1100,9 +1100,9 @@ function viewMoves() {
       if (a === 'copytbl') {
         const src = sel.size ? rows.filter(x => sel.has(x.id)) : rows; if (!src.length) { toast('Tidak ada data untuk disalin.', 'err'); return; }
         const cl = v => String(v ?? '').replace(/[\t\r\n]+/g, ' ').trim();
-        const head = ['TGL', 'PART NUMBER', 'DETAIL', 'FORM/CUSTOMER', 'BPB/GR/GI', 'IN', 'OUT', 'BIN', 'FORM/TO', 'EKSPEDISI', 'PO CUST/REQ', 'AWB/RESI', 'REMARK', 'DICATAT OLEH'];
-        const body = src.slice(0, 5000).map(m => { const p = partMap.get(m.partId) || {}; return [fmtD(m.date), p.partNo, p.name, partyName(m), m.docNo, m.dir === 'in' ? m.qty : '', m.dir === 'out' ? m.qty : '', p.location, m.kind, m.ekspedisi, poText(m), m.awb, m.note, names[m.by] || ''].map(cl).join('\t'); });
-        copyText([head.join('\t'), ...body].join('\n'), `${body.length} baris${sel.size ? ' terpilih' : ''} disalin. Tempel di Google Sheets (Ctrl+V).${src.length > 5000 ? ' (dibatasi 5.000 baris pertama)' : ''}`);
+        const dm = d => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[3]}-${+m[2]}-${m[1]}` : ''; };
+        const body = src.slice(0, 5000).map(m => { const p = partMap.get(m.partId) || {}; return [dm(m.date), p.partNo, partyName(m), m.docNo, m.dir === 'in' ? m.qty : '', m.dir === 'out' ? m.qty : '', p.location, p.name, m.kind, m.ekspedisi, poText(m), m.awb, m.note].map(cl).join('\t'); });
+        copyText(body.join('\n'), `${body.length} baris${sel.size ? ' terpilih' : ''} disalin (tanpa judul kolom). Tempel di Google Sheets (Ctrl+V).${src.length > 5000 ? ' (dibatasi 5.000 baris pertama)' : ''}`);
       }
       if (a === 'csv') exportCSV(mode() === 'in' ? 'barang-masuk' : mode() === 'out' ? 'barang-keluar' : 'part-in-out',
         [['TGL', 'PART NUMBER', 'FORM/CUSTOMER', 'BPB/GR/GI', 'IN', 'OUT', 'BIN', 'DETAIL', 'FORM/TO', 'EKSPEDISI', 'PO CUST/REQ', 'AWB/RESI', 'REMARK', 'DICATAT OLEH'],
