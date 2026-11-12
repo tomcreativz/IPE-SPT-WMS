@@ -1100,7 +1100,7 @@ function viewMoves() {
       if (a === 'copytbl') {
         const src = sel.size ? rows.filter(x => sel.has(x.id)) : rows; if (!src.length) { toast('Tidak ada data untuk disalin.', 'err'); return; }
         const cl = v => String(v ?? '').replace(/[\t\r\n]+/g, ' ').trim();
-        const dm = d => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[3]}-${+m[2]}-${m[1]}` : ''; };
+        const dm = d => { const m = String(d || '').match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : ''; }; /* ISO (tahun-bulan-tanggal): dibaca benar oleh Google Sheets di semua pengaturan wilayah */
         const body = src.slice(0, 5000).map(m => { const p = partMap.get(m.partId) || {}; return [dm(m.date), p.partNo, partyName(m), m.docNo, m.dir === 'in' ? m.qty : '', m.dir === 'out' ? m.qty : '', p.location, p.name, m.kind, m.ekspedisi, poText(m), m.awb, m.note].map(cl).join('\t'); });
         copyText(body.join('\n'), `${body.length} baris${sel.size ? ' terpilih' : ''} disalin (tanpa judul kolom). Tempel di Google Sheets (Ctrl+V).${src.length > 5000 ? ' (dibatasi 5.000 baris pertama)' : ''}`);
       }
