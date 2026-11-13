@@ -917,9 +917,9 @@ async function copyText(txt, msg) {
 function binCheck() {
   const bins = [...new Set(S.parts.map(p => (p.location || '').trim()).filter(Boolean))].sort(byText);
   const m = modal(`<h3>Cek Stok per Bin</h3>
-  <p class="mut" style="margin:0 0 12px;font-size:13px">Tarik daftar part berdasarkan lokasi bin untuk mencocokkan stok fisik dengan sistem. Ketik beberapa bin dipisah koma atau spasi (contoh: <b>A1, A2, F4</b>). Awalan juga dikenali: <b>A1</b> mencakup A1-01, A1-04, dst.</p>
+  <p class="mut" style="margin:0 0 12px;font-size:13px">Tarik daftar part berdasarkan lokasi bin untuk mencocokkan stok fisik dengan sistem. Ketik beberapa bin dipisah koma atau spasi (contoh: <b>A1, A2, F4</b>). Pencarian harus <b>persis sama</b>: <b>F4</b> hanya menampilkan bin F4, tidak ikut F4-01. Untuk semua bin berawalan tertentu, tambahkan tanda bintang: <b>F4*</b>.</p>
   <div class="bar" style="margin-bottom:10px">
-    <input type="search" id="bq" list="binlist" placeholder="Bin: A1, A2, F4-03 … (kosong = semua bin)" style="flex:1;min-width:220px">
+    <input type="search" id="bq" list="binlist" placeholder="Bin: A1, A2, F4-03, F4* … (kosong = semua bin)" style="flex:1;min-width:220px">
     <datalist id="binlist">${bins.map(b => `<option value="${esc(b)}"></option>`).join('')}</datalist>
     <label class="chk-inline"><input type="checkbox" id="bnz" checked> Hanya stok &gt; 0</label>
   </div>
@@ -932,7 +932,7 @@ function binCheck() {
   const el = m.el; let rows = [];
   const compute = () => {
     const toks = $('#bq', el).value.toUpperCase().split(/[\s,;]+/).filter(Boolean), nz = $('#bnz', el).checked;
-    rows = S.parts.filter(p => { const b = (p.location || '').trim().toUpperCase(); return (!toks.length || toks.some(t => b === t || b.startsWith(t))) && (!nz || stock(p.id) > 0); })
+    rows = S.parts.filter(p => { const b = (p.location || '').trim().toUpperCase(); return (!toks.length || toks.some(t => t.endsWith('*') ? b.startsWith(t.slice(0, -1)) : b === t)) && (!nz || stock(p.id) > 0); })
       .map(p => ({ part: p.partNo, bin: (p.location || '').trim(), name: p.name, qty: stock(p.id), unit: p.unit || '' })).sort((a, b) => byText(a.bin, b.bin) || byText(a.part, b.part));
     const nb = new Set(rows.map(r => r.bin)).size;
     $('#bsum', el).innerHTML = `<b>${rows.length}</b> part · <b>${nb}</b> bin · total qty <b>${fmtN(rows.reduce((a, r) => a + r.qty, 0))}</b>`;
