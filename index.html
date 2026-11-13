@@ -927,7 +927,7 @@ function binCheck() {
   <div class="tw" style="max-height:46vh;overflow:auto"><div id="btbl"></div></div>
   <div class="actions" style="flex-wrap:wrap;justify-content:flex-start;gap:8px">
     <button class="btn primary" data-x="cp">Salin Part</button><button class="btn primary" data-x="cb">Salin Bin</button><button class="btn primary" data-x="cq">Salin Qty</button>
-    <button class="btn" data-x="ca">Salin Semua (Part, Bin, Qty, Deskripsi)</button><button class="btn" data-x="csv">Export CSV</button><button class="btn" data-x="pdf">PDF</button>
+    <button class="btn" data-x="ca">Salin Semua (Part, Deskripsi, Bin, Qty)</button><button class="btn" data-x="csv">Export CSV</button><button class="btn" data-x="pdf">PDF</button>
     <span class="grow"></span><button class="btn" data-x="c">Tutup</button></div>`, { wide: true });
   const el = m.el; let rows = [];
   const compute = () => {
@@ -948,7 +948,7 @@ function binCheck() {
     if (x === 'cp') copyText(rows.map(r => r.part).join(J), `${rows.length} No. Part disalin`);
     if (x === 'cb') copyText(rows.map(r => r.bin).join(J), `${rows.length} Bin disalin`);
     if (x === 'cq') copyText(rows.map(r => q(r.qty)).join(J), `${rows.length} Qty disalin`);
-    if (x === 'ca') copyText(rows.map(r => [r.part, r.bin, q(r.qty), String(r.name || '').replace(/[\t\r\n]+/g, ' ').trim()].join('\t')).join(J), `${rows.length} baris (Part, Bin, Qty, Deskripsi) disalin. Bisa ditempel ke Excel.`);
+    if (x === 'ca') copyText(rows.map(r => [r.part, String(r.name || '').replace(/[\t\r\n]+/g, ' ').trim(), r.bin, q(r.qty)].join('\t')).join(J), `${rows.length} baris (Part, Deskripsi, Bin, Qty) disalin. Bisa ditempel ke Excel.`);
     if (x === 'csv') exportCSV('cek-stok-bin', [['NO. PART', 'BIN', 'DESKRIPSI', 'QTY SISTEM', 'SATUAN'], ...rows.map(r => [r.part, r.bin, r.name, r.qty, r.unit])]);
     if (x === 'pdf') {
       const doc = pdfDoc('CEK STOK PER BIN', `Dicetak: ${fmtD(today())} | ${rows.length} part | ${new Set(rows.map(r => r.bin)).size} bin | Filter: ${pdfSafe($('#bq', el).value.trim() || 'semua bin')}`); if (!doc) return;
