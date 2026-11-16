@@ -393,7 +393,8 @@ function modal(html, { wide, onClose } = {}) {
   const close = () => { ov.remove(); document.removeEventListener('keydown', esc_); onClose && onClose(); };
   const esc_ = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', esc_);
-  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  /* Jendela berisi isian (form) tidak tertutup oleh klik di luar, supaya data yang sedang diketik tidak hilang. Tutup lewat tombol Batal/× atau Esc. */
+  ov.addEventListener('mousedown', e => { if (e.target === ov && !ov.querySelector('input:not([type=checkbox]):not([type=radio]), textarea, select')) close(); });
   return { el: ov.firstElementChild, close };
 }
 function confirmBox(msg, ok = 'Ya, lanjutkan', danger = true) {
