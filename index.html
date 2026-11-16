@@ -442,7 +442,7 @@ const ROUTES = [
   ['supplier', 'Database Supplier', viewSuppliers],
   ['pengguna', 'Pengguna & Hak Akses', viewUsers, true],
 ];
-const ROLE_MENUS = { pssr: ['dashboard', 'transaksi', 'cek-stok', 'purchase-order', 'customer'] };
+const ROLE_MENUS = { pssr: ['dashboard', 'transaksi', 'cek-stok', 'purchase-order', 'customer'], admin: ['dashboard', 'spare-part', 'transaksi', 'kartu-stok', 'cek-stok', 'purchase-order', 'customer'] };
 const menuOk = r => (!r[3] || isFull) && (!ROLE_MENUS[myRole] || ROLE_MENUS[myRole].includes(r[0]));
 let current = null;
 function initSidebar() {
