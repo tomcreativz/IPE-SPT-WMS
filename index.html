@@ -2211,6 +2211,30 @@ function shipLabelPDF(v) {
   const short = Math.min(pw, ph), long = Math.max(pw, ph), land = v.arah !== 'portrait';
   const W = land ? long : short, H = land ? short : long, n = Math.max(1, Math.min(200, parseInt(v.jumlah) || 1));
   const doc = new J({ unit: 'mm', format: [short, long], orientation: land ? 'landscape' : 'portrait' });
+  if (v.tata === 'ringkas') {   /* label berukuran tetap di bagian atas kertas, beberapa label per halaman */
+    const fw = Math.min(W - 30, 170), fx = (W - fw) / 2, pd = 6, X2 = 34, X3 = 38, MW = fw - X3 - pd, L = 5.2, lh = 14 * 1, lw = 50;
+    doc.setFont('times', 'bold').setFontSize(10.5);
+    const mk = (label, lines) => { const out = []; for (const ln of lines) { const t = String(ln).trim(); if (t) out.push(...doc.splitTextToSize(t, MW)); } return { label, out: out.length ? out : [''] }; };
+    const secs = [mk('Dikirim Kepada', [v.nama]), mk('Alamat', String(v.alamat || '').split('\n'))];
+    if ((v.penerima || '').trim() || (v.telp || '').trim()) secs.push(mk('Penerima', [`${(v.penerima || '').trim()}${(v.telp || '').trim() ? ` (${v.telp.trim()})` : ''}`.trim()]));
+    secs.push(mk('Dari', String(v.dari || '').split('\n')));
+    const hdr = 22, bodyH = secs.reduce((t, x) => t + x.out.length * L + 3.5, 0) + 3, fh = hdr + bodyH;
+    let y = 12, first = true;
+    for (let i = 0; i < n; i++) {
+      if (!first && y + fh > H - 10) { doc.addPage([short, long], land ? 'landscape' : 'portrait'); y = 12; }
+      first = false;
+      doc.setDrawColor(0).setLineWidth(0.7).rect(fx, y, fw, fh);
+      try { doc.addImage(LOGO_JPG, 'JPEG', fx + pd, y + 3.5, lw, lw * 121 / 430); } catch (e) {}
+      doc.setLineWidth(0.5).line(fx, y + hdr, fx + fw, y + hdr);
+      let yy = y + hdr + 6.5;
+      for (const sc of secs) {
+        doc.setFont('times', 'bold').setFontSize(10.5).text(sc.label, fx + pd, yy); doc.text(':', fx + X2, yy);
+        sc.out.forEach((t, j) => doc.text(t, fx + X3, yy + j * L)); yy += sc.out.length * L + 3.5;
+      }
+      y += fh + 8;
+    }
+    return doc;
+  }
   const k = Math.min(W / 210, H / 148), LW = W / k, LH = H / k;   // koordinat logis dikali k
   for (let pg = 0; pg < n; pg++) {
     if (pg) doc.addPage([short, long], land ? 'landscape' : 'portrait');
@@ -2233,7 +2257,7 @@ function shipLabelPDF(v) {
 }
 function shipLabel(id) {
   const c = custMap.get(id); if (!c) return;
-  let sd = SENDER_DEF, ps = { jumlah: 1, kertas: 'A5', arah: 'landscape', cw: 148, ch: 105 }; try { sd = localStorage.getItem('wms-sender') || SENDER_DEF; ps = { ...ps, ...JSON.parse(localStorage.getItem('wms-labelset') || '{}') }; } catch (e) {}
+  let sd = SENDER_DEF, ps = { jumlah: 1, kertas: 'A4', arah: 'portrait', tata: 'ringkas', cw: 148, ch: 105 }; try { sd = localStorage.getItem('wms-sender') || SENDER_DEF; ps = { ...ps, ...JSON.parse(localStorage.getItem('wms-labelset') || '{}') }; } catch (e) {}
   const addr = [c.address, c.city].map(x => (x || '').trim()).filter(Boolean).join('\n');
   const m = modal(`<h3>Cetak Alamat Pengiriman</h3><form id="sl">
     ${fld('Dikirim Kepada', 'nama', { val: c.name, attrs: 'required' })}
@@ -2243,16 +2267,17 @@ function shipLabel(id) {
     <div class="grid" style="margin-top:6px">
       ${fld('Jumlah lembar', 'jumlah', { type: 'number', val: ps.jumlah, attrs: 'min="1" max="200" required' })}
       ${fld('Ukuran kertas', 'kertas', { opts: Object.keys(PAPER).map(k => [k, k === 'Kustom' ? 'Kustom (ukuran sendiri)' : k + (PAPER[k] ? ` (${PAPER[k][0]} x ${PAPER[k][1]} mm)` : '')]), val: ps.kertas })}
+      ${fld('Tata letak', 'tata', { opts: [['ringkas', 'Ringkas di atas kertas (hemat, bisa beberapa label per halaman)'], ['penuh', 'Penuh satu lembar (label memenuhi kertas)']], val: ps.tata })}
       ${fld('Orientasi', 'arah', { opts: [['landscape', 'Mendatar (landscape)'], ['portrait', 'Tegak (portrait)']], val: ps.arah })}
       <div id="cust" class="grid" ${ps.kertas === 'Kustom' ? '' : 'hidden'} style="grid-column:1/-1;margin:0;padding:0">${fld('Lebar (mm)', 'cw', { type: 'number', val: ps.cw, attrs: 'min="50" step="any"' })}${fld('Tinggi (mm)', 'ch', { type: 'number', val: ps.ch, attrs: 'min="40" step="any"' })}</div>
     </div>
-  </form><div class="mut" style="font-size:12px;margin:6px 0">Tata letak otomatis menyesuaikan ukuran kertas. Data dari Database Customer, bisa diubah sebelum dicetak. Isian "Dari" diingat di browser ini.</div>
+  </form><div class="mut" style="font-size:12px;margin:6px 0">Mode <b>Ringkas</b> mencetak label berukuran tetap di bagian atas kertas, jadi A4 tegak dengan Jumlah 3 memuat 3 label dalam satu halaman. Data dari Database Customer, bisa diubah sebelum dicetak. Isian "Dari" diingat di browser ini.</div>
   <div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn" data-x="d">Unduh PDF</button><button class="btn primary" data-x="p">🖨 Print</button></div>`);
   m.el.addEventListener('change', e => { if (e.target.name === 'kertas') $('#cust', m.el).hidden = e.target.value !== 'Kustom'; });
   m.el.addEventListener('click', e => {
     const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') return m.close();
     const f = $('#sl', m.el); if (!f.reportValidity()) return; const v = Object.fromEntries(new FormData(f));
-    try { localStorage.setItem('wms-sender', v.dari); localStorage.setItem('wms-labelset', JSON.stringify({ jumlah: v.jumlah, kertas: v.kertas, arah: v.arah, cw: v.cw, ch: v.ch })); } catch (e2) {}
+    try { localStorage.setItem('wms-sender', v.dari); localStorage.setItem('wms-labelset', JSON.stringify({ jumlah: v.jumlah, kertas: v.kertas, arah: v.arah, tata: v.tata, cw: v.cw, ch: v.ch })); } catch (e2) {}
     const doc = shipLabelPDF(v); if (!doc) return;
     if (b.dataset.x === 'd') { saveFile(`alamat-${c.name.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40)}.pdf`, doc.output('blob')); m.close(); return; }
     const url = URL.createObjectURL(doc.output('blob')); let done = false;
