@@ -222,6 +222,7 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .chd{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.chd h2{margin:0}.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg button{border:0;background:#fff;padding:6px 14px;font:600 12.5px inherit;cursor:pointer;color:var(--mut)}.seg button.on{background:var(--y);color:#16181d}
 .brall{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;background:#fff8e1;border:1px solid #f5dd8a;border-radius:10px;padding:8px 12px;margin:0 0 10px}.brall select{padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;max-width:190px}
 .supg{color:#92400e}.supg button{border:1px solid #f5c542;background:#fff8e1;color:#7a4b00;border-radius:999px;padding:1px 9px;font:600 12px ui-monospace,Menlo,Consolas,monospace;cursor:pointer}.supg button:hover{background:#ffe9a8}
+.pk-find{display:flex;align-items:center;gap:10px;margin:8px 0 0}.pk-find input{flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:15px}
 </style>
 </head>
 <body>
@@ -2804,19 +2805,22 @@ function openPutaway(moves) {
   const docs = [...new Set(moves.map(x => x.docNo || '-'))];
   const m = modal(`<h3 style="margin-bottom:4px">Putaway List</h3>
   <div class="mut" style="font-size:13px;margin-bottom:8px">${docs.length} dokumen · ${esc(docs.slice(0, 4).join(', '))}${docs.length > 4 ? ' …' : ''}</div>
-  <div class="pk-top"><div class="t"><div id="pkc">0 / 0 disusun</div><span id="pkq"></span></div><div class="pk-bar"><i id="pkb" style="width:0"></i></div></div>
+  <div class="pk-top"><div class="t"><div id="pkc">0 / 0 disusun</div><span id="pkq"></span></div><div class="pk-bar"><i id="pkb" style="width:0"></i></div><div class="pk-find"><input id="pkf" type="search" placeholder="Cari part number / deskripsi / bin…" autocomplete="off" inputmode="search"><span id="pkn" class="mut"></span></div></div>
   <div id="pv"></div>
   <details style="margin:6px 0 4px"><summary class="mut" style="cursor:pointer;font-size:13px">Atur bin Gudang 2</summary>
     <label class="f" style="margin-top:8px"><span>Awalan bin yang termasuk Gudang 2 (pisahkan koma)</span><input id="g2" value="${esc(getG2())}"></label></details>
   <div class="pk-act"><button class="btn" data-x="sapp">Salin Part</button><button class="btn" data-x="sapq">Salin Qty</button><button class="btn" data-x="reset">Reset centang</button><button class="btn" data-x="dl">Unduh PDF</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
   m.el.classList.add('pkm');
   const el = m.el, rowsNow = () => putawayRows(moves, $('#g2', el).value), keyOf = r => r.id, noBin = r => !r.bin || /^unlocated$/i.test(r.bin);
+  const norm_ = t => String(t || '').toLowerCase().replace(/[\s\/\-_.]+/g, '');
   const draw = () => {
     const rows = rowsNow(), dn = r => done.has(keyOf(r)), n = rows.filter(dn).length, q = rows.reduce((s, r) => s + r.qty, 0), qd = rows.filter(dn).reduce((s, r) => s + r.qty, 0);
     $('#pkc', el).textContent = `${n} / ${rows.length} disusun`; $('#pkq', el).textContent = `${fmtN(qd)} / ${fmtN(q)} pcs`; $('#pkb', el).style.width = (rows.length ? n / rows.length * 100 : 0) + '%';
-    $('#pv', el).innerHTML = rows.map(r => `<div class="pkr put ${r.g2 ? 'g2' : ''} ${dn(r) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${dn(r) ? '✓' : ''}</div><div class="mid"><div class="bin">${noBin(r) ? '<span style="color:#dc2626">BELUM ADA BIN</span>' : esc(r.bin)}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}</div><div class="ds" style="font-size:12px;margin-top:3px">${r.refs.map(x => `<span class="chip gray" style="margin:0 4px 2px 0">${esc(x)}</span>`).join('')}</div>${noBin(r) && canWrite ? `<input class="nb" data-pid="${r.id}" placeholder="Ketik lokasi bin lalu Enter" style="margin-top:6px;width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px">` : ''}</div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
+    const fq = norm_($('#pkf', el).value), shown = fq ? rows.filter(r => norm_([r.partNo, r.name, r.bin, r.refs.join(' ')].join(' ')).includes(fq)) : rows;
+    $('#pkn', el).textContent = fq ? `${shown.length} dari ${rows.length}` : '';
+    $('#pv', el).innerHTML = (fq && !shown.length ? '<div class="mut" style="padding:18px;text-align:center">Part tidak ditemukan di daftar ini.</div>' : '') + shown.map(r => `<div class="pkr put ${r.g2 ? 'g2' : ''} ${dn(r) ? 'done' : ''}" data-k="${esc(keyOf(r))}"><div class="cb">${dn(r) ? '✓' : ''}</div><div class="mid"><div class="bin">${noBin(r) ? '<span style="color:#dc2626">BELUM ADA BIN</span>' : esc(r.bin)}${r.g2 ? '<small>GUDANG 2</small>' : ''}</div><div class="pn">${esc(r.partNo)}</div><div class="ds">${esc(r.name)}</div><div class="ds" style="font-size:12px;margin-top:3px">${r.refs.map(x => `<span class="chip gray" style="margin:0 4px 2px 0">${esc(x)}</span>`).join('')}</div>${noBin(r) && canWrite ? `<input class="nb" data-pid="${r.id}" placeholder="Ketik lokasi bin lalu Enter" style="margin-top:6px;width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px">` : ''}</div><div class="q">${fmtN(r.qty)}<small>pcs</small></div></div>`).join('');
   };
-  draw(); el.addEventListener('input', e => { if (e.target.id === 'g2') draw(); });
+  draw(); el.addEventListener('input', e => { if (e.target.id === 'g2' || e.target.id === 'pkf') draw(); });
   el.addEventListener('change', async e => { const i = e.target.closest('.nb'); if (!i) return; const v = i.value.trim().toUpperCase(); if (!v) return; if (await guarded(() => db.doc('parts/' + i.dataset.pid).update({ location: v, updatedAt: nowISO() }))) { toast('Lokasi bin disimpan'); setTimeout(draw, 60); } });
   el.addEventListener('click', e => { if (e.target.closest('.nb')) return; const r = e.target.closest('.pkr'); if (!r) return; const k = r.dataset.k; if (done.has(k)) done.delete(k); else done.add(k); saveDone(); draw(); });
   el.addEventListener('click', async e => {
