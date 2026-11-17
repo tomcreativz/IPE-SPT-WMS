@@ -606,8 +606,9 @@ function analyze(ym, sohOf) {
     if (soh <= 0 && active === 0) mv = ''; else if (soh > 0 && active === 0) mv = 'DEADSTOCK'; else if (active > 3) mv = 'FAST'; else if (active === 3) mv = 'MEDIUM'; else mv = 'SLOW';
     const ship = p.ship ?? 1, ss = p.ss ?? 1, freq = p.freq ?? 1, avg = Math.ceil(T / 6);
     const min = (ship + ss) * avg, max = Math.ceil(ship + ss + freq) * avg, inc = incoming.get(p.id) || 0, avail = free + inc;
-    const sug = T === 0 ? 0 : (avail >= max ? 0 : (avail <= min ? Math.max(max - avail, 1) : 0));
     const lasts = avg === 0 ? null : r1(avail / avg);
+    /* saran juga diisi untuk status SEGERA ORDER (stok sedikit di atas Min tetapi akan menembus Min dalam < 1 bulan) */
+    const sug = T === 0 ? 0 : (avail >= max ? 0 : (avail <= min || lasts < ship + ss + 1 ? Math.max(max - avail, 1) : 0));
     let urg;
     if (T === 0) urg = 'TIDAK BERGERAK'; else if (avail >= max) urg = 'STOK CUKUP'; else if (lasts < ship + ss) urg = 'ORDER SEKARANG!'; else if (lasts < ship + ss + 1) urg = 'SEGERA ORDER'; else urg = 'AMAN';
     R.set(p.id, { p, vals, T, active, soh, free, mv, avg, min, max, inc, avail, sug, cover: avg === 0 ? null : r1(soh / avg), lasts, urg });
