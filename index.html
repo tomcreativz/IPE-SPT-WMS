@@ -271,7 +271,7 @@ let minMap = new Map(), closedSet = new Set(), setMissing = false, soMissing = f
 const loaded = {};
 let sb = null, db = null, uid = null, myRole = '', myEmail = '', PROFILES = [];
 let canWrite = false, canPO = false, canCust = false, isFull = false, loadFailed = false;
-let alloc = new Map(), stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
+let lineMap = new Map(), stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
 const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '', sel: new Set() }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '', hide: false, inc: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
   kartu: { part: '', from: '', to: '' }, cust: { q: '', grp: '' }, supp: { q: '' }, po: { q: '', st: '', sort: '' } };
@@ -293,17 +293,24 @@ function reindex() {
     const ref = String(m.poRef || poMap.get(m.poId)?.poNo || '').trim().toUpperCase(); if (!ref) continue;
     const k = ref + '|' + m.partId; const T = m.dir === 'out' ? delivIdx : reqIdx; T.set(k, (T.get(k) || 0) + m.qty);
   }
-  commit = new Map();
-  for (const po of S.pos) { if (po.status === 'batal') continue; const ref = String(po.poNo || '').trim().toUpperCase(); for (const it of po.items || []) { const sisa = Math.max(0, it.qty - (delivIdx.get(ref + '|' + it.partId) || 0)); if (sisa) commit.set(it.partId, (commit.get(it.partId) || 0) + sisa); } }
-  /* Alokasi stok per PO secara FIFO: PO yang diinput lebih dulu mendapat stok lebih dulu, sisanya baru PO berikutnya. */
-  alloc = new Map(); const left = new Map();
+  /* Perhitungan per BARIS PO (aman untuk part yang sama muncul dua kali dalam satu PO):
+     - terkirim dibagi ke baris berurutan, sisa = qty - terkirim
+     - stok dibagikan FIFO: PO yang diinput lebih dulu mendapat stok lebih dulu; status LENGKAP/KURANG murni dari stok yang benar-benar teralokasi */
+  commit = new Map(); lineMap = new Map(); const left = new Map(), dem = new Map();
   for (const po of S.pos.slice().sort(poOrder)) {
-    if (po.status === 'batal') continue; const ref = String(po.poNo || '').trim().toUpperCase();
-    for (const it of po.items || []) {
-      const sisa = Math.max(0, it.qty - (delivIdx.get(ref + '|' + it.partId) || 0)); if (!sisa || it.ket === 'C') continue;
-      if (!left.has(it.partId)) left.set(it.partId, Math.max(0, stock(it.partId)));
-      const a = Math.min(sisa, left.get(it.partId)); left.set(it.partId, left.get(it.partId) - a); alloc.set(po.id + '|' + it.partId, (alloc.get(po.id + '|' + it.partId) || 0) + a);
-    }
+    if (po.status === 'batal') continue; const ref = String(po.poNo || '').trim().toUpperCase(), pool = new Map();
+    (po.items || []).forEach((it, i) => {
+      const q = Number(it.qty) || 0, pid = it.partId, key = ref + '|' + pid;
+      if (!pool.has(pid)) pool.set(pid, delivIdx.get(key) || 0);
+      const used = Math.min(q, pool.get(pid)); pool.set(pid, pool.get(pid) - used);
+      const sisa = Math.max(0, q - used); let al = 0;
+      if (sisa > 0) {
+        commit.set(pid, (commit.get(pid) || 0) + sisa);
+        if (!left.has(pid)) left.set(pid, Math.max(0, stock(pid)));
+        al = Math.min(sisa, left.get(pid)); left.set(pid, left.get(pid) - al); dem.set(pid, (dem.get(pid) || 0) + sisa);
+      }
+      lineMap.set(po.id + '#' + i, { d: used, sisa, al, fr: stock(pid) - (dem.get(pid) || 0) });
+    });
   }
   closedSet = new Set(S.settings.find(x => x.key === 'closed')?.months || []);
   dataVer++;
@@ -349,20 +356,21 @@ const poOrder = (a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') |
 function commitBefore(partId, po) {
   let t = 0; for (const o of S.pos) {
     if (o.status === 'batal' || (po && (o.id === po.id || poOrder(o, po) > 0))) continue;
-    const ref = String(o.poNo || '').trim().toUpperCase(); for (const it of o.items || []) if (it.partId === partId && it.ket !== 'C') t += Math.max(0, it.qty - (delivIdx.get(ref + '|' + partId) || 0));
+    (o.items || []).forEach((it, i) => { if (it.partId === partId) t += lineMap.get(o.id + '#' + i)?.sisa || 0; });
   } return t;
 }
 function poInfo(po) {
   const ref = String(po.poNo || '').trim().toUpperCase();
-  const lines = (po.items || []).map(it => {
-    const key = ref + '|' + it.partId; const d = delivIdx.get(key) || 0, rq = reqIdx.get(key) || 0;
-    const sisa = Math.max(0, it.qty - d), stk = stock(it.partId), free = stk - (commit.get(it.partId) || 0);
+  const lines = (po.items || []).map((it, i) => {
+    const key = ref + '|' + it.partId, rq = reqIdx.get(key) || 0, lm = lineMap.get(po.id + '#' + i);
+    const d = lm ? lm.d : Math.min(Number(it.qty) || 0, delivIdx.get(key) || 0), sisa = lm ? lm.sisa : Math.max(0, (Number(it.qty) || 0) - d), al = lm ? lm.al : 0;
+    const stk = stock(it.partId), free = lm && sisa > 0 ? lm.fr : stk - (commit.get(it.partId) || 0);   /* Free per baris: sisa stok setelah memenuhi PO ini (negatif = kurang) */
     let st;
     if (po.status === 'batal') st = { k: 'Batal', c: 'gray' };
     else if (sisa === 0) st = { k: 'Terkirim', c: 'ok' };
-    else if (it.ket === 'C' || (alloc.get(po.id + '|' + it.partId) || 0) >= sisa) st = { k: 'LENGKAP', c: 'ok' };
+    else if (al >= sisa) st = { k: 'LENGKAP', c: 'ok' };
     else st = { k: 'KURANG', c: 'bad' };
-    const kurang = st.k === 'KURANG' ? sisa - (alloc.get(po.id + '|' + it.partId) || 0) : 0;
+    const kurang = st.k === 'KURANG' ? sisa - al : 0;
     return { ...it, d, sisa, stk, free, st, kurang, dv: sisa === 0 ? 'DELIVERED' : rq > 0 ? 'REQ DONE' : 'BELUM' };
   });
   let ord = 0, del = 0, val = 0;
@@ -2501,7 +2509,7 @@ function poForm(id) {
     for (const r of ls.children) {
       const p = partFromText($('.lp', r).value), k = $('.lk', r); if (!p || !(parseFloat($('.lq', r).value) > 0)) { k.innerHTML = ''; continue; }
       const free = stock(p.id) - commitBefore(p.id, id ? po : null) - tot.get(p.id);
-      k.innerHTML = r.dataset.ket === 'C' || free >= 0 ? '<span class="chip ok">LENGKAP</span>' : `<span class="chip bad">KURANG ${fmtN(Math.min(tot.get(p.id), -free))}</span>`;
+      k.innerHTML = free >= 0 ? '<span class="chip ok">LENGKAP</span>' : `<span class="chip bad">KURANG ${fmtN(Math.min(tot.get(p.id), -free))}</span>`;
     }
   }
   /* Saran part asli: jika yang diketik adalah nomor supersession (nomor lama), tampilkan part aslinya. */
