@@ -224,6 +224,7 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .supg{color:#92400e}.supg button{border:1px solid #f5c542;background:#fff8e1;color:#7a4b00;border-radius:999px;padding:1px 9px;font:600 12px ui-monospace,Menlo,Consolas,monospace;cursor:pointer}.supg button:hover{background:#ffe9a8}
 .pk-find{display:flex;align-items:center;gap:10px;margin:8px 0 0}.pk-find input{flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:15px}
 .brfil{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}.chipb{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:4px 12px;font:600 12.5px inherit;cursor:pointer;color:#374151}.chipb.on{background:var(--y);border-color:var(--y);color:#16181d}
+.sepr td{background:#f3f4f6;font-weight:700;font-size:12.5px;color:#4b5563;padding:7px 12px;border-top:2px solid #e5e7eb}
 </style>
 </head>
 <body>
@@ -2619,12 +2620,14 @@ async function brAutoReceive(items) {
 function branchReqModal(srcItems) {
   if (!canWrite) return denied();
   const gm = new Map(); for (const it of srcItems) { if (!(it.qty > 0)) continue; if (!gm.has(it.partId)) gm.set(it.partId, { partId: it.partId, qty: 0, srcs: [] }); const g = gm.get(it.partId); g.qty += it.qty; g.srcs.push(it); }
-  const groups = [...gm.values()].sort((a, b) => byText(partMap.get(a.partId)?.partNo, partMap.get(b.partId)?.partNo));
+  const stOf = g => g.srcs.map(x => x.po.branchReq?.[g.partId]).find(Boolean), isDone = g => ['diminta', 'diterima', 'naikpr'].includes(stOf(g)?.status);
+  const sorted = [...gm.values()].sort((a, b) => byText(partMap.get(a.partId)?.partNo, partMap.get(b.partId)?.partNo));
+  const groups = [...sorted.filter(g => !isDone(g)), ...sorted.filter(isDone)], nDone = groups.filter(isDone).length;   // yang sudah di-req dipisah di bagian bawah
   if (!groups.length) { toast('Tidak ada part yang kurang pada PO ini.', 'err'); return; }
   const supGrp = g => g.srcs.map(x => x.po.branchReq?.[g.partId]?.sup).find(Boolean) || '';
   const m = modal(`<h3>Minta ke Cabang</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Pilih part yang mau ditanyakan ke cabang. Qty awal diisi sesuai kekurangan stok dan bisa diubah. Pesan di bawah siap ditempel ke WhatsApp.</p>
   <div class="brfil" id="brfil"></div>
-  <div class="tw" style="max-height:34vh"><table><thead><tr><th style="width:36px"></th><th>Part number</th><th>Deskripsi</th><th>PO</th><th class="n">Qty diminta</th></tr></thead><tbody>${groups.map((g, i) => { const p = partMap.get(g.partId) || {}, exist = g.srcs.map(x => x.po.branchReq?.[g.partId]).find(Boolean); return `<tr data-i="${i}" data-cab="${esc(supGrp(g))}"><td><input type="checkbox" class="gc" ${exist && ['diminta', 'diterima', 'naikpr'].includes(exist.status) ? '' : 'checked'} style="width:18px;height:18px"></td><td class="mono"><b>${esc(p.partNo || '(dihapus)')}</b></td><td>${esc(p.name || '')} ${brChip(exist)}</td><td class="mut" style="font-size:12.5px">${esc([...new Set(g.srcs.map(x => x.po.poNo))].join(', '))}</td><td class="n"><input type="number" class="gq" min="1" step="any" value="${g.qty}" style="width:84px;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;text-align:right"></td></tr>`; }).join('')}</tbody></table></div>
+  <div class="tw" style="max-height:34vh"><table><thead><tr><th style="width:36px"></th><th>Part number</th><th>Deskripsi</th><th>PO</th><th class="n">Qty diminta</th></tr></thead><tbody>${groups.map((g, i) => { const p = partMap.get(g.partId) || {}, exist = stOf(g); return `${nDone && i === groups.length - nDone ? `<tr class="sepr"><td colspan="5">✔ Sudah di-req / diterima / Naik PR (${nDone}) <span class="mut">· tidak ikut dicentang otomatis</span></td></tr>` : ''}<tr data-i="${i}" data-cab="${esc(supGrp(g))}" ${isDone(g) ? 'data-done="1"' : ''}><td><input type="checkbox" class="gc" ${exist && ['diminta', 'diterima', 'naikpr'].includes(exist.status) ? '' : 'checked'} style="width:18px;height:18px"></td><td class="mono"><b>${esc(p.partNo || '(dihapus)')}</b></td><td>${esc(p.name || '')} ${brChip(exist)}</td><td class="mut" style="font-size:12.5px">${esc([...new Set(g.srcs.map(x => x.po.poNo))].join(', '))}</td><td class="n"><input type="number" class="gq" min="1" step="any" value="${g.qty}" style="width:84px;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;text-align:right"></td></tr>`; }).join('')}</tbody></table></div>
   <div class="brbar"><label><span class="mut">Cabang/supplier tujuan</span><select id="bsup">${brSupOpts(lastSup())}</select></label><label><span class="mut">Ubah status part yang dicentang</span><span style="display:flex;gap:6px"><select id="bst"><option value="">— pilih status —</option>${Object.entries(BR_ST).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select><button class="btn sm" data-x="apply">Terapkan</button></span></label></div>
   <div style="display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 6px;font-size:13px"><label class="chk-inline"><input type="checkbox" id="od"> Sertakan deskripsi</label><label class="chk-inline"><input type="checkbox" id="op"> Sertakan nomor PO</label><label class="chk-inline"><input type="checkbox" id="ol" checked> Catat sebagai “Ditanyakan” saat disalin/dikirim</label></div>
   <textarea id="msg" rows="7" readonly style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;background:#f9fafb"></textarea>
@@ -2646,8 +2649,10 @@ function branchReqModal(srcItems) {
     fb.innerHTML = cs.length > 1 || (cs[0] && cs[0][0] !== '__none') ? `<span class="mut" style="font-size:12.5px">Filter cabang:</span><button type="button" class="chipb ${cabF === '__all' ? 'on' : ''}" data-cab="__all">Semua (${groups.length})</button>${cs.map(([k, n]) => `<button type="button" class="chipb ${cabF === k ? 'on' : ''}" data-cab="${esc(k)}">${k === '__none' ? 'Belum ditentukan' : esc(k)} (${n})</button>`).join('')}` : '';
   };
   const applyFil = (auto) => {
-    el.querySelectorAll('tbody tr[data-i]').forEach(tr => { const hit = cabF === '__all' || (tr.dataset.cab || '__none') === cabF; tr.hidden = !hit; if (auto && hit) $('.gc', tr).checked = true; });
+    el.querySelectorAll('tbody tr[data-i]').forEach(tr => { const hit = cabF === '__all' || (tr.dataset.cab || '__none') === cabF; tr.hidden = !hit; if (auto && hit) $('.gc', tr).checked = !tr.dataset.done; });
     if (auto && cabF !== '__all' && cabF !== '__none') { const sel = $('#bsup', el); if ([...sel.options].some(o => o.value === cabF)) sel.value = cabF; }
+    const sp = el.querySelector('tr.sepr');
+    if (sp) { let any = false; for (let n = sp.nextElementSibling; n; n = n.nextElementSibling) if (!n.hidden) any = true; sp.hidden = !any; }
     drawFil(); draw();
   };
   el.addEventListener('click', e => { const cb = e.target.closest('[data-cab]:not(tr)'); if (!cb) return; cabF = cb.dataset.cab; applyFil(true); });
