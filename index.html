@@ -274,7 +274,7 @@ let canWrite = false, canPO = false, canCust = false, isFull = false, loadFailed
 let lineMap = new Map(), stockMap = new Map(), partMap = new Map(), custMap = new Map(), suppMap = new Map(), poMap = new Map(), commit = new Map(), delivIdx = new Map(), reqIdx = new Map();
 const names = {};
 const F = { dash: { year: new Date().getFullYear() }, so: { q: '', per: '', st: '', sel: new Set() }, cek: { text: '' }, rep: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', mv: '', urg: '', active: true }, all: { q: '', from: '', to: '', kind: '', dir: '' }, soh: { ym: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7), q: '', active: true, moved: false }, parts: { q: '', cat: '', st: '', hide: false, inc: '' }, in: { q: '', from: '', to: '', kind: '' }, out: { q: '', from: '', to: '', kind: '' },
-  kartu: { part: '', from: '', to: '' }, cust: { q: '', grp: '' }, supp: { q: '' }, po: { q: '', st: '', sort: '' } };
+  kartu: { part: '', from: '', to: '' }, cust: { q: '', grp: '' }, supp: { q: '' }, po: { q: '', st: '', sort: '', from: '', to: '' } };
 
 const IN_TYPES = ['IN', 'RETURN CUSTOMER', 'SALDO AWAL', 'KOREKSI (+)'];
 const OUT_TYPES = ['SOLD CUSTOMER', 'WH03 SERVICE', 'BUNDLING', 'IPE BJM', 'IPE SMD', 'IPE BPP', 'IPE PTK', 'IPE SBY', 'IPE JKT', 'IPE PKY', 'PART DAMAGE', 'PART RETURN', 'FUCHS', 'KOREKSI (-)'];
@@ -2419,17 +2419,21 @@ function viewPO() {
     <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
       <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Delivery Done', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipacking', 'Stok kurang', 'Pengajuan batal'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
       <select id="posort" title="Urutkan daftar PO"><option value="" ${F.po.sort === '' ? 'selected' : ''}>Urutan: Terbaru</option><option value="old" ${F.po.sort === 'old' ? 'selected' : ''}>Urutan: Terlama</option><option value="hi" ${F.po.sort === 'hi' ? 'selected' : ''}>Urutan: Nilai tertinggi</option><option value="lo" ${F.po.sort === 'lo' ? 'selected' : ''}>Urutan: Nilai terendah</option></select>
+      <label class="mut">Tgl PO dari <input type="date" id="pfrom" value="${esc(F.po.from)}"></label><label class="mut">sampai <input type="date" id="pto" value="${esc(F.po.to)}"></label>
+      <button class="btn" data-act="pmonth" title="Tampilkan PO bulan ini">Bulan ini</button><button class="btn" data-act="pres" title="Kosongkan pencarian dan semua filter">Reset</button>
       <span id="bk"></span><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="pickall">Picking Gabungan</button>${canWrite ? '<button class="btn" data-act="sendall" title="Buat satu Barang Keluar dari beberapa PO">📦 Barang Keluar Gabungan</button>' : ''}${canWrite ? '<button class="btn" data-act="reqbr" title="Tanyakan part yang kurang ke cabang">📤 Minta ke Cabang</button>' : ''}${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) {
       const sel = (F.po.sel = F.po.sel || new Set());
       if (e.target.id === 'selall') { for (const x of rows) { if (e.target.checked) sel.add(x.id); else sel.delete(x.id); } this.fill(); return; }
       if (e.target.dataset.sel) { if (e.target.checked) sel.add(e.target.dataset.sel); else sel.delete(e.target.dataset.sel); this.fill(); return; }
-      if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; if (e.target.id === 'posort') F.po.sort = e.target.value; this.fill();
+      if (e.target.id === 'q') F.po.q = e.target.value; if (e.target.id === 'st') F.po.st = e.target.value; if (e.target.id === 'posort') F.po.sort = e.target.value; if (e.target.id === 'pfrom') F.po.from = e.target.value; if (e.target.id === 'pto') F.po.to = e.target.value; this.fill();
     },
     act(a, id) {
       const sel = (F.po.sel = F.po.sel || new Set()), sids = [...sel].filter(i => poMap.has(i));
       if (a === 'clrsel') { sel.clear(); this.fill(); }
+      if (a === 'pmonth') { const t = today(); F.po.from = t.slice(0, 8) + '01'; const d = new Date(+t.slice(0, 4), +t.slice(5, 7), 0); F.po.to = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; $('#pfrom').value = F.po.from; $('#pto').value = F.po.to; this.fill(); }
+      if (a === 'pres') { F.po.q = ''; F.po.st = ''; F.po.from = ''; F.po.to = ''; for (const k of ['q', 'st', 'pfrom', 'pto']) { const i = $('#' + k); if (i) i.value = ''; } this.fill(); }
       if (a === 'seldone') { const ds = S.pos.filter(p => poInfo(p).st.k === 'Delivery Done'); F.po.st = 'Delivery Done'; sel.clear(); ds.forEach(p => sel.add(p.id)); const stEl = $('#st'); if (stEl) stEl.value = 'Delivery Done'; this.fill(); toast(`${ds.length} PO Delivery Done dipilih`); }
       if (a === 'delpo') delMany('pos', sids, 'PO', () => { sel.clear(); this.fill(); }, ' Riwayat Barang Keluar (transaksi) tidak ikut terhapus, jadi stok dan kartu stok tetap benar.');
       if (a === 'add') poForm();
@@ -2443,7 +2447,7 @@ function viewPO() {
     },
     fill() {
       const q = F.po.q.toLowerCase();
-      rows = S.pos.filter(p => { const i = poInfo(p); return (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipacking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); })
+      rows = S.pos.filter(p => { const i = poInfo(p); return (!F.po.from || (p.date || '') >= F.po.from) && (!F.po.to || (p.date || '') <= F.po.to) && (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipacking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); })
         .sort((a, b) => { const k = F.po.sort, d = (b.date + b.poNo).localeCompare(a.date + a.poNo); if (k === 'old') return -d; if (k === 'hi') return (poInfo(b).val || 0) - (poInfo(a).val || 0) || d; if (k === 'lo') return (poInfo(a).val || 0) - (poInfo(b).val || 0) || d; return d; });
       const sel = (F.po.sel = F.po.sel || new Set()); for (const i of [...sel]) if (!poMap.has(i)) sel.delete(i);
       const nDone = isFull ? S.pos.filter(p => poInfo(p).st.k === 'Delivery Done').length : 0, bk = $('#bk');
