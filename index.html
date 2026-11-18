@@ -3121,7 +3121,7 @@ function viewSO() {
     shell: `${soMissing ? `<div class="banner warn">Tabel Stock Order belum terbaca dari database. Jalankan <b>supabase-tambah-stockorder.sql</b> di Supabase SQL Editor (lihat panduan), lalu muat ulang halaman.${errDetail('sorders')}</div>` : ''}${ro()}${loadNoteHTML}
     <div class="bar"><input type="search" id="q" placeholder="Cari part number / deskripsi…" value="${esc(F.so.q)}"><select id="per"></select>
       <select id="st"><option value="">Semua status</option>${['BELUM', 'SEBAGIAN', 'DONE'].map(s => `<option ${F.so.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-      <span id="bk"></span><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>${canWrite && !soMissing ? '<button class="btn" data-act="xso">Impor SO dari SOH</button><button class="btn primary" data-act="add">+ Stock Order</button>' : ''}</div>
+      <span id="bk"></span><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="xlsx" title="Unduh format Plan SO (Excel) untuk Periode SO yang dipilih">Export XLSX</button>${canWrite && !soMissing ? '<button class="btn" data-act="xso">Impor SO dari SOH</button><button class="btn primary" data-act="add">+ Stock Order</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) {
       const sel = (F.so.sel = F.so.sel || new Set());
@@ -3134,6 +3134,11 @@ function viewSO() {
       if (a === 'clrsel') { sel.clear(); this.fill(); }
       if (a === 'delmany') delMany('sorders', ids, 'baris Stock Order', () => { sel.clear(); this.fill(); });
       if (a === 'closemany' || a === 'openmany') { const v = a === 'closemany'; guarded(async () => { for (const i of ids) await db.doc('sorders/' + i).update({ done: v }); }).then(ok => { if (ok) { toast(`${ids.length} baris ${v ? 'ditutup (C)' : 'dibuka lagi'}`); sel.clear(); this.fill(); } }); }
+      if (a === 'xlsx') {
+        if (!F.so.per) return toast('Pilih dulu Periode SO pada filter di atas.', 'err');
+        const g = new Map(); let dt = ''; for (const l of S.sorders) { if (l.period !== F.so.per) continue; g.set(l.partId, (g.get(l.partId) || 0) + (l.req || 0)); if ((l.date || '') > dt) dt = l.date; }
+        return exportSOXlsx({ period: F.so.per, date: dt, lines: [...g].map(([partId, qty]) => ({ partId, qty })) });
+      }
       if (a === 'add') soForm();
       if (a === 'xso') importSOFromSOH();
       if (a === 'del') delSO(id);
@@ -3189,7 +3194,7 @@ function soForm(preset = {}) {
   <div class="lines so"><div class="lh"><span>Part number</span><span class="c">Req qty</span><span class="c">Movement</span><span class="c">Stok</span><span class="c">Saran</span><span></span></div><div id="ls"></div>
   <div style="padding:8px 10px;border-top:1px solid #f0f1f3"><button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm" data-x="paste">📋 Tempel dari Excel</button></div></div></form>
   <p class="mut" style="font-size:12px">Saat barang tiba, catat di Barang Masuk dengan kolom <b>PO CUST/REQ</b> diisi sama persis dengan Periode SO ini; status akan menjadi SEBAGIAN/DONE otomatis.</p>
-  <div class="err" id="serr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan</button></div>`, { wide: true });
+  <div class="err" id="serr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn" data-x="xl" title="Unduh format Plan SO (Excel) dari baris yang sedang diisi">Export XLSX</button><button class="btn primary" data-x="s">Simpan</button></div>`, { wide: true });
   const el = m.el, ls = $('#ls', el), A = analysisNow();
   function info(r) { const p = partFromText($('.lp', r).value), a = p && A.get(p.id); const cls = { FAST: 'ok', MEDIUM: 'info', SLOW: 'warn', DEADSTOCK: 'bad' }[a?.mv] || 'gray'; $('.lm', r).innerHTML = a ? `<span class="chip ${cls}">${a.mv || '-'}</span>` : ''; $('.lk', r).textContent = a ? fmtN(a.soh) : ''; $('.lg', r).textContent = a ? fmtN(a.sug) : ''; }
   function addLine(pid = '', qty = '') { const p = pid ? partMap.get(pid) : null; const r = document.createElement('div'); r.className = 'lr'; r.innerHTML = `<input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><input class="lq" type="number" min="0" step="any" value="${qty}" placeholder="0"><span class="lm c"></span><span class="lk c"></span><span class="lg c"></span><button type="button" class="btn sm" data-x="rm">×</button>`; ls.appendChild(r); info(r); }
@@ -3204,6 +3209,13 @@ function soForm(preset = {}) {
       for (const l of pl) { const ex = have.get(l.partId); if (ex) $('.lq', ex).value = (parseFloat($('.lq', ex).value) || 0) + l.qty; else addLine(l.partId, l.qty); }
     });
     if (x === 'rm') { b.closest('.lr').remove(); if (!ls.children.length) addLine(); }
+    if (x === 'xl') {
+      const err = $('#serr', el); err.textContent = ''; const f = $('#sf', el), v = Object.fromEntries(new FormData(f));
+      const lines = [...ls.children].map(r => ({ p: partFromText($('.lp', r).value), raw: $('.lp', r).value.trim(), q: parseFloat($('.lq', r).value) || 0 })).filter(l => l.raw);
+      const bad = lines.find(l => !l.p); if (bad) { err.textContent = `Part “${bad.raw}” tidak ditemukan.`; return; }
+      if (!lines.length) { err.textContent = 'Isi minimal satu part untuk diexport.'; return; }
+      exportSOXlsx({ period: (v.period || '').trim(), date: v.date, lines: lines.map(l => ({ partId: l.p.id, qty: l.q })) });
+    }
     if (x === 's') {
       const err = $('#serr', el); err.textContent = ''; const f = $('#sf', el); if (!f.reportValidity()) return;
       const lines = [...ls.children].map(r => ({ p: partFromText($('.lp', r).value), raw: $('.lp', r).value.trim(), q: parseFloat($('.lq', r).value) })).filter(l => l.raw || l.q);
@@ -3214,6 +3226,68 @@ function soForm(preset = {}) {
       if (ok) { m.close(); toast(`${lines.length} baris Stock Order tersimpan`); } else b.disabled = false;
     }
   });
+}
+/* ============ EXPORT STOCK ORDER KE XLSX (format Plan SO IPE) ============ */
+function exportSOXlsx({ period, date, lines }) {
+  const X = window.XLSX; if (!X) { toast('Pustaka Excel belum termuat. Periksa koneksi internet lalu coba lagi.', 'err'); return; }
+  const ls = (lines || []).filter(l => partMap.get(l.partId)); if (!ls.length) { toast('Belum ada part untuk diexport.', 'err'); return; }
+  const dt = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : today(), ym = dt.slice(0, 7), A = analyze(ym), win = analysisWindow(ym);
+  const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'AGT', 'SEP', 'OKT', 'NOV', 'DES'], dd = +dt.slice(8, 10), mi = +dt.slice(5, 7) - 1;
+  const y0 = win[0].slice(0, 4), y1 = win[5].slice(0, 4);
+  const ws = {}, merges = [], FN = 'Aptos Narrow', thin = { style: 'thin', color: { rgb: '000000' } }, bd = { top: thin, bottom: thin, left: thin, right: thin };
+  const put = (ref, v, o = {}) => {
+    const c = typeof v === 'number' ? { t: 'n', v } : { t: 's', v: v == null ? '' : String(v) };
+    if (o.f) { c.f = o.f; if (o.v !== undefined) { c.v = o.v; c.t = typeof o.v === 'number' ? 'n' : 's'; } }
+    if (o.z) c.z = o.z;
+    c.s = { font: { name: FN, sz: o.sz || 10, bold: !!o.b, italic: !!o.i }, alignment: { horizontal: o.h || 'center', vertical: 'center', wrapText: !!o.wrap } };
+    if (!o.nb) c.s.border = bd;
+    if (o.fill) c.s.fill = { patternType: 'solid', fgColor: { rgb: o.fill } };
+    ws[ref] = c;
+  };
+  const col = i => X.utils.encode_col(i), mg = (a, b) => merges.push(X.utils.decode_range(a + ':' + b));
+  put('A3', 'STOCK ORDER MITRA IPE', { nb: true, i: true, h: 'left' });
+  put('D4', `SPT ${dd} ${BLN_ID[mi]} ${dt.slice(0, 4)}`, { nb: true, h: 'left' });
+  const H1 = { A: 'Movement', D: 'PN', E: 'DESCRIPTION', F: 'TYPE UNIT', G: 'SALES PRICE', H: 'STOCK CATEGORY', I: 'IN COMING', J: `SOH SPT ${String(dd).padStart(2, '0')} ${MON[mi]}`, K: 'TOTAL AVAILABLE', L: 'QTY ORDER SUGESTION', M: 'REQ ORDER SPT', N: 'MIN-MAX', P: 'LEADTIME', S: 'AVRG 6M', T: y0 === y1 ? `DELIVERY ${y1}` : `DELIVERY ${y0}-${y1}`, Z: 'SUM', AA: 'REMARK' };
+  for (let c = 0; c < 27; c++) for (const r of [5, 6, 7]) put(col(c) + r, '', { fill: c === 11 ? 'FFFF00' : c === 12 ? 'BFBFBF' : undefined });
+  for (const [k, v] of Object.entries(H1)) put(k + '5', v, { b: k === 'L', wrap: true, fill: k === 'L' ? 'FFFF00' : k === 'M' ? 'BFBFBF' : undefined });
+  ['A', 'B', 'C'].forEach((k, i) => put(k + '6', ['FAST', 'MEDIUM', 'SLOW'][i]));
+  [['N', 'MIN'], ['O', 'MAX'], ['P', 'SHIP'], ['Q', 'SS'], ['R', 'FREQ ORDER'], ['S', 'SUM']].forEach(([k, v]) => put(k + '6', v, { wrap: true }));
+  win.forEach((k, i) => put(col(19 + i) + '6', MON[+k.slice(5, 7) - 1]));
+  for (const k of ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'Z', 'AA']) mg(k + '5', k + '6'); mg('A5', 'C5'); mg('N5', 'O5'); mg('P5', 'R5'); mg('T5', 'Y5');
+  let r = 8;
+  for (const l of ls) {
+    const p = partMap.get(l.partId), a = A.get(p.id), vals = a ? a.vals : [0, 0, 0, 0, 0, 0], soh = a ? a.soh : stock(p.id), inc = a ? a.inc : 0;
+    const ship = p.ship ?? 1, ss = p.ss ?? 1, freq = p.freq ?? 1, Z = vals.reduce((x, y) => x + y, 0), S_ = Math.ceil(Z / 6), mn = (ship + ss) * S_, mx = (ship + ss + freq) * S_, K = inc + soh;
+    const mv = a ? a.mv : '';
+    put('A' + r, mv === 'FAST' ? 'Y' : 'N'); put('B' + r, mv === 'MEDIUM' ? 'Y' : 'N'); put('C' + r, mv === 'SLOW' ? 'Y' : 'N');
+    put('D' + r, p.partNo, { h: 'left', sz: 11 }); put('E' + r, p.name, { h: 'left', sz: 11 }); put('F' + r, p.model || '', { sz: 11 });
+    put('G' + r, p.price || 0, { z: '_-* #,##0_-;\\-* #,##0_-;_-* "-"_-;_-@_-' }); put('H' + r, 'STOCK');
+    put('I' + r, inc, { sz: 11 }); put('J' + r, soh, { sz: 11 });
+    put('K' + r, 0, { f: `I${r}+J${r}`, v: K });
+    put('L' + r, 0, { f: `IF(K${r}<=N${r},N${r}-K${r},0)`, v: K <= mn ? mn - K : 0, b: true, fill: 'FFFF00' });
+    put('M' + r, l.qty || 0, { b: true, sz: 11, z: '0', fill: 'BFBFBF' });
+    put('N' + r, 0, { f: `(P${r}+Q${r})*S${r}`, v: mn }); put('O' + r, 0, { f: `(P${r}+Q${r}+R${r})*S${r}`, v: mx });
+    put('P' + r, ship, { fill: 'F2F2F2' }); put('Q' + r, ss, { fill: 'F2F2F2' }); put('R' + r, freq, { fill: 'F2F2F2' });
+    put('S' + r, 0, { f: `ROUNDUP(Z${r}/6,0)`, v: S_ });
+    vals.forEach((v, i) => put(col(19 + i) + r, v, { sz: 11 }));
+    put('Z' + r, 0, { f: `SUM(T${r}:Y${r})`, v: Z });
+    put('AA' + r, 'Diperhitungkan based on call demand cabang ', { h: 'left' });
+    r++;
+  }
+  const last = r - 1, g = last + 4, SG = (ref, v, o = {}) => put(ref, v, { b: true, ...o });
+  for (let rr = g; rr <= g + 7; rr++) for (const k of 'GHIJKLM') put(k + rr, '');
+  SG('G' + g, 'CABANG SAMPIT'); mg('G' + g, 'M' + g);
+  ['Diminta Oleh', 'Dibuat Oleh', 'Diketahui', 'Checker', 'Menyetujui'].forEach((v, i) => SG('GHIJK'[i] + (g + 1), v)); mg('K' + (g + 1), 'M' + (g + 1));
+  SG('J' + (g + 6), 'AHMAD SYAHRIAL', { sz: 9 }); SG('K' + (g + 6), 'SUKARWANTO', { sz: 9 }); SG('L' + (g + 6), 'MAYORANA HERLAMBANG', { sz: 9 }); mg('L' + (g + 6), 'M' + (g + 6));
+  ['PSSR', 'WAREHOUSE', 'BRANCH MANAGER', 'PARTS ANALYST', 'GM AFTER SALES', 'DIRECTOR'].forEach((v, i) => SG('GHIJKL'[i] + (g + 7), v, { sz: 9 })); mg('L' + (g + 7), 'M' + (g + 7));
+  ws['!ref'] = `A1:AA${g + 7}`; ws['!merges'] = merges;
+  ws['!cols'] = [7, 8.3, 6.5, 17.3, 30, 17.9, 18.5, 17.9, 16.7, 16.9, 14.9, 11.9, 9.4, 6.5, 6.1, 5.7, 5.5, 7.3, 8.1, 4.5, 4.5, 4.5, 4.5, 4.5, 4.5, 5.7, 35.9].map(w => ({ wch: w }));
+  ws['!rows'] = []; ws['!rows'][5] = { hpt: 25.5 };
+  ws['!freeze'] = { xSplit: 4, ySplit: 6, topLeftCell: 'E7', activePane: 'bottomRight', state: 'frozen' };
+  const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const buf = X.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
+  const nm = ('Plan ' + (period || 'Stock Order') + ' IPE SPT').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  saveFile(`${nm}.xlsx`, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
 }
 let _an = { ver: -1, ym: '', v: null };
 function analysisNow() { const ym = curYM(); if (_an.ver !== dataVer || _an.ym !== ym) _an = { ver: dataVer, ym, v: analyze(ym) }; return _an.v; }
