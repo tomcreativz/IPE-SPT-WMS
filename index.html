@@ -2535,7 +2535,7 @@ function poForm(id) {
   }
   function info(d) {
     const txt = $('.lp', d).value.trim(), p = partFromText(txt), li = $('.li', d), sg = txt ? supSuggest(txt, p) : [];
-    const sgH = sg.length ? ` <span class="supg">💡 Part asli: ${sg.map(x => `<button type="button" data-x="usesup" data-id="${x.id}" title="${esc(x.name)}">${esc(x.partNo)}</button>`).join(' ')}</span>` : '';
+    const sgH = sg.length ? ` <span class="supg">💡 Supersession: ${sg.map(x => `<button type="button" data-x="usesup" data-id="${x.id}" title="${esc(x.name)}">${esc(x.partNo)}</button>`).join(' ')}</span>` : '';
     if (p) li.innerHTML = esc(`Bin ${p.location || '-'} · Stok ${fmtN(stock(p.id))} · Free ${fmtN(stock(p.id) - (commit.get(p.id) || 0) + (ownC.get(p.id) || 0))}`) + sgH;
     else if (txt && canPO) li.innerHTML = (sg.length ? `<span class="mut">Nomor ini adalah supersession.</span>${sgH} ` : '') + `${sg.length ? '' : '<span class="out">Part tidak ada di database.</span> '}<button type="button" data-x="newpart" style="background:none;border:0;color:#b45309;cursor:pointer;text-decoration:underline;font:inherit;font-size:12px;padding:0">+ Tambah part baru</button>`;
     else li.textContent = '';
