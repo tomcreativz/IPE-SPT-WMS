@@ -227,6 +227,10 @@ table.pt{table-layout:fixed;min-width:1000px}table.pt td{overflow:hidden;text-ov
 .pk-find{display:flex;align-items:center;gap:10px;margin:8px 0 0}.pk-find input{flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:15px}
 .brfil{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}.chipb{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:4px 12px;font:600 12.5px inherit;cursor:pointer;color:#374151}.chipb.on{background:var(--y);border-color:var(--y);color:#16181d}
 .sepr td{background:#f3f4f6;font-weight:700;font-size:12.5px;color:#4b5563;padding:7px 12px;border-top:2px solid #e5e7eb}
+.anb{height:8px;background:#eceef1;border-radius:5px;overflow:hidden;min-width:70px}.anb i{display:block;height:100%;background:var(--y);border-radius:5px}
+tr.anr,.hb.anr,td.anr{cursor:pointer}tr.anr:hover td,td.anr:hover{background:#fff8e1}
+.hb{display:grid;grid-template-columns:minmax(120px,40%) minmax(60px,1fr) auto;gap:10px;align-items:center;padding:6px 4px;font-size:13px;border-radius:8px}.hb:hover{background:#fff8e1}.hb small{font-size:11.5px}.hb>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:600px){.hb{grid-template-columns:1fr auto}.hb .anb{grid-column:1/-1;order:3}}
 </style>
 </head>
 <body>
@@ -469,6 +473,7 @@ const ROUTES = [
   ['kartu-stok', 'Kartu Stok', viewKartu],
   ['cek-stok', 'Cek Stok', viewCek],
   ['purchase-order', 'Purchase Order', viewPO],
+  ['analisa-customer', 'Analisa Customer', viewAnalisa],
   ['stock-order', 'Stock Order (JCB)', viewSO],
   ['tutup-bulan', 'Tutup Bulan & Rekonsiliasi', viewClose],
   ['customer', 'Database Customer', viewCustomers],
@@ -3353,6 +3358,147 @@ function viewCek() {
         out.push({ raw, p, req, soh: a.soh, free: a.free, min: a.min, mv: a.mv, ket: a.free >= req ? 'BISA' : (a.soh >= req ? 'TIDAK (stok tersisa untuk PO lain)' : 'TIDAK') });
       }
       $('#tbl').innerHTML = out.length ? `<table class="cekt"><thead><tr><th>Part number</th><th>Detail</th><th class="n">Req qty</th><th>Bin</th><th>Model</th><th>Movement</th><th class="n">Stok free</th><th>Bisa diminta?</th></tr></thead><tbody>${out.map(r => `<tr><td class="mono pn" data-l="Part number"><b>${esc(r.p?.partNo || r.raw)}</b></td><td class="dt" data-l="Detail">${esc(r.p?.name || '')}</td><td class="n" data-l="Req qty">${fmtN(r.req)}</td><td data-l="Bin">${esc(r.p?.location || '')}</td><td data-l="Model">${esc(r.p?.model || '')}</td><td data-l="Movement">${r.mv ? `<span class="chip ${mvChip(r.mv)}">${r.mv}</span>` : ''}</td><td class="n ${r.p && r.free < 0 ? 'out' : ''}" data-l="Stok free">${r.p ? fmtN(r.free) : ''}</td><td class="ok2" data-l="Bisa diminta?"><span class="chip ${r.ket === 'BISA' ? 'ok' : r.ket.startsWith('TIDAK (') ? 'warn' : 'bad'}">${esc(r.ket)}</span></td></tr>`).join('')}</tbody></table>` : empty('Belum ada yang dicek.');
+    }
+  };
+}
+
+/* ============ ANALISA CUSTOMER ============ */
+/* Pembelian = barang keluar berjenis DELIV_KINDS (SOLD CUSTOMER, WH03 SERVICE, BUNDLING), nilai = qty x harga master part (sama dengan definisi Revenue di Dashboard). */
+function anRange(per) {
+  if (per === 'all') return ['', '9999-12-31'];
+  if (per === '6m' || per === '12m') return [monthsBack(curYM(), per === '6m' ? 6 : 12)[0] + '-01', '9999-12-31'];
+  return [per + '-01-01', per + '-12-31'];
+}
+function anCompute(f) {
+  const [from, to] = anRange(f.per), byName = new Map(S.customers.map(c => [custKey(c.name), c])), q = (f.q || '').trim().toLowerCase();
+  const C = new Map(), P = new Map(), M = new Map(); let tot = 0, qty = 0;
+  for (const m of S.movements) {
+    if (m.dir !== 'out' || !DELIV_KINDS.includes(m.kind) || (f.kind && m.kind !== f.kind)) continue;
+    const d = m.date || ''; if (d < from || d > to) continue;
+    const p = partMap.get(m.partId); if (!p) continue;
+    const c = custMap.get(m.partyId) || byName.get(custKey(m.party || ''));
+    const nm = c ? c.name : (String(m.party || '').trim() || '(tanpa customer)'), key = c ? c.id : 'n:' + (custKey(m.party || '') || '-');
+    const grp = ((c && c.group) || '').trim() || 'Tanpa grup';
+    if (f.grp && grp !== f.grp) continue;
+    if (q && !(nm + ' ' + grp).toLowerCase().includes(q)) continue;
+    const val = m.qty * (p.price || 0);
+    let x = C.get(key); if (!x) { x = { key, name: nm, group: grp, val: 0, qty: 0, docs: new Set(), parts: new Map(), months: new Map(), first: d, last: d }; C.set(key, x); }
+    x.val += val; x.qty += m.qty; x.docs.add(m.docNo || m.poRef || d); if (d < x.first) x.first = d; if (d > x.last) x.last = d;
+    const pp = x.parts.get(p.id) || { qty: 0, val: 0, last: '' }; pp.qty += m.qty; pp.val += val; if (d > pp.last) pp.last = d; x.parts.set(p.id, pp);
+    const ym = d.slice(0, 7); x.months.set(ym, (x.months.get(ym) || 0) + val); M.set(ym, (M.get(ym) || 0) + val);
+    let g = P.get(p.id); if (!g) { g = { p, qty: 0, val: 0, cust: new Map() }; P.set(p.id, g); }
+    g.qty += m.qty; g.val += val; g.cust.set(key, (g.cust.get(key) || 0) + m.qty);
+    tot += val; qty += m.qty;
+  }
+  const custs = [...C.values()].map(x => { const tp = [...x.parts.entries()].sort((a, b) => b[1].qty - a[1].qty)[0]; return { ...x, nDocs: x.docs.size, nSku: x.parts.size, top: tp ? { p: partMap.get(tp[0]), ...tp[1] } : null }; }).sort((a, b) => b.val - a.val || b.qty - a.qty);
+  const G = new Map();
+  for (const c of custs) { let g = G.get(c.group); if (!g) { g = { name: c.group, val: 0, qty: 0, custs: [] }; G.set(c.group, g); } g.val += c.val; g.qty += c.qty; g.custs.push(c); }
+  const groups = [...G.values()].sort((a, b) => (a.name === 'Tanpa grup') - (b.name === 'Tanpa grup') || b.val - a.val);
+  return { custs, groups, parts: [...P.values()], months: M, tot, qty };
+}
+let _anc = { k: '', v: null };
+function anGet(st) { const k = dataVer + '|' + JSON.stringify([st.per, st.grp, st.kind, st.q]); if (_anc.k !== k) _anc = { k, v: anCompute(st) }; return _anc.v; }
+const anMonths = keys => { if (!keys.length) return []; const s = [...keys].sort(), last = s[s.length - 1]; let [y, m] = s[0].split('-').map(Number); const out = []; for (; ;) { const k = `${y}-${String(m).padStart(2, '0')}`; out.push(k); if (k >= last || out.length >= 60) break; m++; if (m > 12) { m = 1; y++; } } return out; };
+const anPct = (v, t) => (t > 0 ? (v / t * 100).toFixed(1) : '0.0') + '%';
+const anBar = (pct, c) => `<div class="anb"><i style="width:${Math.max(0, Math.min(100, pct)).toFixed(1)}%;${c ? 'background:' + c : ''}"></i></div>`;
+const anAgo = d => d ? Math.max(0, Math.round((new Date(today() + 'T00:00:00') - new Date(d + 'T00:00:00')) / 864e5)) : null;
+
+function viewAnalisa() {
+  const st = F.an = F.an || { per: String(new Date().getFullYear()), grp: '', kind: '', q: '', tab: 'ringkas', sort: 'val', pm: 'val' };
+  let A = null;
+  const perLabel = () => st.per === 'all' ? 'Semua waktu' : st.per === '6m' ? '6 bulan terakhir' : st.per === '12m' ? '12 bulan terakhir' : 'Tahun ' + st.per;
+  const legend = (items, tot) => `<div class="lg">${items.map(i => `<div class="lgi"><i style="background:${i.c}"></i>${esc(i.n)}<b>${Math.round(i.v / tot * 100)}%</b></div>`).join('')}</div>`;
+  const custRow = (c, i, tot, withGrp) => `<tr class="anr" data-act="cd" data-id="${esc(c.key)}"><td class="n mut">${i}</td><td><b>${esc(c.name)}</b></td>${withGrp ? `<td>${esc(c.group)}</td>` : ''}<td class="n nw"><b>${fmtRp(c.val)}</b></td><td style="min-width:130px">${anBar(tot ? c.val / tot * 100 : 0)}<div class="mut" style="font-size:11px">${anPct(c.val, tot)}</div></td><td class="n">${fmtN(c.qty)}</td><td class="n">${fmtN(c.nSku)}</td><td class="n">${fmtN(c.nDocs)}</td><td class="nw">${fmtD(c.last)}</td><td>${c.top ? `<span class="mono">${esc(c.top.p.partNo)}</span><div class="mut" style="font-size:11.5px">${esc(c.top.p.name)} · ${fmtN(c.top.qty)} ${esc(c.top.p.unit || '')}</div>` : ''}</td></tr>`;
+  const head = withGrp => `<thead><tr><th class="n">#</th><th>Customer</th>${withGrp ? '<th>Grup</th>' : ''}<th class="n">Nilai pembelian</th><th>Porsi</th><th class="n">Qty</th><th class="n">SKU</th><th class="n">Dokumen</th><th>Beli terakhir</th><th>Part terbanyak</th></tr></thead>`;
+
+  function tabRingkas() {
+    const { custs, groups, parts, months, tot, qty } = A;
+    if (!custs.length) return empty('Belum ada data pembelian customer pada filter ini.');
+    let cum = 0, n80 = 0; for (const c of custs) { cum += c.val; n80++; if (cum >= tot * 0.8) break; }
+    const top10 = custs.slice(0, 10), mx = top10[0].val || 1;
+    const gi = groups.filter(g => g.val > 0).sort((a, b) => b.val - a.val), gTop = gi.slice(0, 8), gRest = gi.slice(8).reduce((s, g) => s + g.val, 0);
+    const gItems = gTop.map((g, i) => ({ n: g.name, v: g.val, c: MODEL_COL[i], t: fmtRp(g.val) })); if (gRest > 0) gItems.push({ n: 'Lainnya', v: gRest, c: MODEL_COL[8], t: fmtRp(gRest) });
+    const ms = anMonths([...months.keys()]).slice(-12);
+    const topParts = parts.slice().sort((a, b) => b.val - a.val).slice(0, 10);
+    const life = anGet({ per: 'all', grp: '', kind: '', q: '' });
+    const dorm = life.custs.filter(c => anAgo(c.last) > 90).sort((a, b) => b.val - a.val).slice(0, 8);
+    return `<div class="cards kpi">
+      ${kpi('Total nilai pembelian', rpC(tot), esc(perLabel()), 'ok')}
+      ${kpi('Customer aktif', fmtN(custs.length), fmtN(groups.filter(g => g.name !== 'Tanpa grup').length) + ' grup' + (groups.some(g => g.name === 'Tanpa grup') ? ' + tanpa grup' : ''), 'info')}
+      ${kpi('Customer terbesar', rpC(custs[0].val), esc(custs[0].name) + ' · <b>' + anPct(custs[0].val, tot) + '</b>')}
+      ${kpi('Konsentrasi 80%', fmtN(n80) + ' customer', 'menyumbang 80% nilai (' + anPct(n80, custs.length * 1).replace('.0', '') + ' dari customer)', n80 <= 3 && custs.length > 5 ? 'warn' : '')}
+      ${kpi('Qty terjual', fmtN(qty), fmtN(parts.length) + ' SKU berbeda · rata-rata ' + rpC(tot / custs.length) + '/customer')}
+    </div>
+    <div class="row2">
+      <div class="card"><h2>10 customer dengan nilai pembelian tertinggi</h2>${top10.map((c, i) => `<div class="hb anr" data-act="cd" data-id="${esc(c.key)}" title="Klik untuk detail"><span><b>${i + 1}.</b> ${esc(c.name)}<small class="mut"> · ${esc(c.group)}</small></span>${anBar(c.val / mx * 100)}<b class="nw">${rpC(c.val)}</b></div>`).join('')}</div>
+      <div class="card chcard"><h2>Porsi nilai per grup</h2><div class="sub">${esc(perLabel())} · total ${fmtRpC(tot)}</div><div class="dn">${donutSVG(gItems)}${legend(gItems, tot || 1)}</div></div>
+    </div>
+    <div class="card chcard chfull"><h2>Tren nilai pembelian per bulan</h2><div class="sub">Seluruh customer pada filter · ${ms.length} bulan terakhir pada periode</div>${ms.length > 1 ? `<div style="overflow-x:auto"><div style="min-width:640px">${lineSVG(ms, [{ n: 'Nilai pembelian', c: '#f5b400', vals: ms.map(k => months.get(k) || 0) }])}</div></div>` : '<div class="mut" style="padding:20px;text-align:center">Butuh minimal 2 bulan data untuk menampilkan tren.</div>'}</div>
+    <div class="row2">
+      <div class="card"><h2>10 spare part dengan nilai penjualan tertinggi</h2><div class="tw" style="border:0"><table><thead><tr><th>Part number</th><th>Detail</th><th class="n">Qty</th><th class="n">Nilai</th><th>Pembeli terbesar</th></tr></thead><tbody>${topParts.map(g => { const [bk, bq] = [...g.cust.entries()].sort((a, b) => b[1] - a[1])[0], bc = custs.find(c => c.key === bk); return `<tr><td class="mono"><b>${esc(g.p.partNo)}</b></td><td>${esc(g.p.name)}</td><td class="n">${fmtN(g.qty)}</td><td class="n nw">${fmtRp(g.val)}</td><td>${esc(bc?.name || '')}<div class="mut" style="font-size:11.5px">${fmtN(bq)} ${esc(g.p.unit || '')}</div></td></tr>`; }).join('')}</tbody></table></div></div>
+      <div class="card"><h2>Customer lama tidak membeli</h2><div class="mut" style="font-size:12px;margin-bottom:8px">Pembelian terakhir lebih dari 90 hari lalu (seluruh riwayat, tidak terpengaruh filter), diurutkan menurut total nilai historis. Peluang untuk follow-up.</div>${dorm.length ? `<div class="tw" style="border:0"><table><thead><tr><th>Customer</th><th>Grup</th><th class="n">Total historis</th><th>Terakhir</th></tr></thead><tbody>${dorm.map(c => `<tr class="anr" data-act="cd" data-id="${esc(c.key)}"><td><b>${esc(c.name)}</b></td><td>${esc(c.group)}</td><td class="n nw">${rpC(c.val)}</td><td class="nw">${fmtD(c.last)} <span class="age a3">${anAgo(c.last)} hari</span></td></tr>`).join('')}</tbody></table></div>` : empty('Semua customer aktif membeli dalam 90 hari terakhir.')}</div>
+    </div>`;
+  }
+  function tabGrup() {
+    const { groups, tot, custs } = A; if (!custs.length) return empty('Belum ada data pembelian customer pada filter ini.');
+    return `<div class="mut" style="font-size:12.5px;margin-bottom:8px">Customer dikelompokkan per grup (urut nilai grup tertinggi); di dalam grup diurutkan menurut nilai pembelian. Klik customer untuk detail. Grup diatur di Database Customer.</div>
+    <div class="tw"><table>${head(false)}<tbody>${groups.map(g => `<tr class="sepr"><td colspan="10">${esc(g.name.toUpperCase())} <span class="mut" style="font-weight:500">· ${fmtN(g.custs.length)} customer · ${fmtN(g.qty)} qty</span> <span style="float:right">${fmtRp(g.val)} · ${anPct(g.val, tot)}</span></td></tr>${g.custs.map((c, i) => custRow(c, i + 1, tot, false)).join('')}`).join('')}</tbody></table></div>`;
+  }
+  function tabCust() {
+    const { custs, tot } = A; if (!custs.length) return empty('Belum ada data pembelian customer pada filter ini.');
+    const k = st.sort, rows = custs.slice().sort((a, b) => k === 'last' ? (b.last || '').localeCompare(a.last || '') : (b[k] - a[k]) || b.val - a.val).slice(0, 300);
+    return `<div class="bar"><label class="mut">Urutkan <select id="ansort">${[['val', 'Nilai pembelian'], ['qty', 'Qty'], ['nDocs', 'Jumlah dokumen'], ['nSku', 'Ragam SKU'], ['last', 'Pembelian terakhir']].map(([v, t]) => `<option value="${v}" ${k === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label><span class="mut" style="font-size:12.5px">${fmtN(custs.length)} customer${custs.length > 300 ? ' (300 teratas ditampilkan)' : ''}</span></div>
+    <div class="tw"><table>${head(true)}<tbody>${rows.map((c, i) => custRow(c, i + 1, tot, true)).join('')}</tbody></table></div>`;
+  }
+  function tabPart() {
+    const { parts, custs } = A; if (!parts.length) return empty('Belum ada data penjualan pada filter ini.');
+    const k = st.pm, rows = parts.slice().sort((a, b) => b[k] - a[k]).slice(0, 100), cn = new Map(custs.map(c => [c.key, c.name]));
+    return `<div class="bar"><label class="mut">Urutkan <select id="anpm"><option value="val" ${k === 'val' ? 'selected' : ''}>Nilai penjualan</option><option value="qty" ${k === 'qty' ? 'selected' : ''}>Qty terjual</option></select></label><span class="mut" style="font-size:12.5px">100 teratas dari ${fmtN(parts.length)} SKU</span></div>
+    <div class="tw"><table><thead><tr><th class="n">#</th><th>Part number</th><th>Detail</th><th class="n">Qty</th><th class="n">Nilai</th><th class="n">Customer</th><th>Pembeli terbesar</th></tr></thead><tbody>${rows.map((g, i) => { const [bk, bq] = [...g.cust.entries()].sort((a, b) => b[1] - a[1])[0]; return `<tr><td class="n mut">${i + 1}</td><td class="mono"><b>${esc(g.p.partNo)}</b></td><td>${esc(g.p.name)}</td><td class="n">${fmtN(g.qty)} <span class="mut">${esc(g.p.unit || '')}</span></td><td class="n nw">${fmtRp(g.val)}</td><td class="n">${fmtN(g.cust.size)}</td><td class="anr" data-act="cd" data-id="${esc(bk)}">${esc(cn.get(bk) || '')}<div class="mut" style="font-size:11.5px">${fmtN(bq)} ${esc(g.p.unit || '')}</div></td></tr>`; }).join('')}</tbody></table></div>`;
+  }
+  function custDetail(key) {
+    const c = A.custs.find(x => x.key === key); if (!c) return;
+    const rec = custMap.get(key), parts = [...c.parts.entries()].map(([id, v]) => ({ p: partMap.get(id), ...v })).filter(x => x.p).sort((a, b) => b.qty - a.qty);
+    const ms = anMonths([...c.months.keys()]).slice(-24), mx = Math.max(1, ...ms.map(k => c.months.get(k) || 0));
+    const cat = new Map(); for (const x of parts) { const k2 = (x.p.category || '').trim() || 'Tanpa kategori'; cat.set(k2, (cat.get(k2) || 0) + x.val); }
+    const cs = [...cat.entries()].sort((a, b) => b[1] - a[1]), ci = cs.slice(0, 8).map((e, i) => ({ n: e[0], v: e[1], c: MODEL_COL[i], t: fmtRp(e[1]) })), cr = cs.slice(8).reduce((s, e) => s + e[1], 0); if (cr > 0) ci.push({ n: 'Lainnya', v: cr, c: MODEL_COL[8], t: fmtRp(cr) });
+    const nPO = rec ? S.pos.filter(p => p.customerId === rec.id).length : 0, avg = c.nDocs ? c.val / c.nDocs : 0;
+    const m = modal(`<h3>${esc(c.name)} <span class="chip gray">${esc(c.group)}</span></h3>
+      <div class="mut" style="font-size:12.5px;margin:-6px 0 10px">${esc(perLabel())}${rec && (rec.pic || rec.city) ? ' · ' + esc([rec.pic, rec.city].filter(Boolean).join(' · ')) : ''} · ${fmtN(nPO)} PO tercatat</div>
+      <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"><div class="card stat hl"><small>Total nilai</small><b style="font-size:19px">${fmtRp(c.val)}</b></div><div class="card stat"><small>Porsi dari total</small><b>${anPct(c.val, A.tot)}</b></div><div class="card stat"><small>Qty / SKU</small><b>${fmtN(c.qty)} / ${fmtN(c.nSku)}</b></div><div class="card stat"><small>Dokumen · rata-rata</small><b style="font-size:17px">${fmtN(c.nDocs)} · ${rpC(avg)}</b></div><div class="card stat"><small>Pertama – terakhir</small><b style="font-size:15px">${fmtD(c.first)} – ${fmtD(c.last)}</b></div></div>
+      <h2>Nilai pembelian per bulan</h2><div class="chart">${ms.map(k => { const v = c.months.get(k) || 0; return `<div class="c"><div class="bars"><i title="${ymLabel(k)}: ${fmtRp(v)}" style="height:${v / mx * 100}%;background:var(--y);width:60%;max-width:34px"></i></div><small>${BULAN[+k.slice(5, 7) - 1]}-${k.slice(2, 4)}</small></div>`; }).join('')}</div>
+      <div class="row2" style="margin-top:14px"><div class="card chcard"><h2>Komposisi per kategori (nilai)</h2><div class="dn">${donutSVG(ci)}${legend(ci, cs.reduce((s, e) => s + e[1], 0) || 1)}</div></div>
+      <div class="card"><h2>Spare part paling banyak dibeli</h2><div class="tw" style="border:0;max-height:300px"><table><thead><tr><th>Part</th><th class="n">Qty</th><th class="n">Nilai</th><th>Terakhir</th></tr></thead><tbody>${parts.slice(0, 15).map(x => `<tr><td class="mono"><b>${esc(x.p.partNo)}</b><div class="mut" style="font-size:11.5px;font-family:Inter,sans-serif">${esc(x.p.name)}</div></td><td class="n"><b>${fmtN(x.qty)}</b></td><td class="n nw">${rpC(x.val)}</td><td class="nw">${fmtD(x.last)}</td></tr>`).join('')}</tbody></table></div></div></div>
+      <div class="actions"><button class="btn" data-x="csv">Export CSV part</button><button class="btn primary" data-x="c">Tutup</button></div>`, { wide: true });
+    m.el.addEventListener('click', e => { const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === 'c') m.close(); if (b.dataset.x === 'csv') exportCSV('analisa-' + c.name.replace(/[^\w]+/g, '-').slice(0, 30), [['Part Number', 'Detail', 'Qty', 'Nilai (Rp)', 'Pembelian terakhir'], ...parts.map(x => [x.p.partNo, x.p.name, x.qty, x.val, fmtD(x.last)])]); });
+  }
+  return {
+    shell: `${loadNoteHTML}
+    <div class="bar"><label class="mut">Periode <select id="anper"></select></label><select id="ang"></select>
+      <select id="ank"><option value="">Semua jenis delivery</option>${DELIV_KINDS.map(k => `<option ${st.kind === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
+      <input type="search" id="anq" placeholder="Cari customer / grup…" value="${esc(st.q)}"><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button></div>
+    <p class="mut" style="margin:-4px 0 12px;font-size:12.5px">Pembelian = barang keluar <b>SOLD CUSTOMER, WH03 SERVICE, BUNDLING</b>; nilai = qty × harga master part (sama dengan Revenue di Dashboard).</p>
+    <div class="seg" id="antabs" style="margin-bottom:14px"></div><div id="anb"></div>`,
+    input(e) {
+      const k = { anper: 'per', ang: 'grp', ank: 'kind', anq: 'q', ansort: 'sort', anpm: 'pm' }[e.target.id];
+      if (k) { st[k] = e.target.value; this.fill(); }
+    },
+    act(a, id) {
+      if (a === 'tab') { st.tab = id; this.fill(); }
+      if (a === 'cd') custDetail(id);
+      if (a === 'csv') {
+        if (!A || !A.custs.length) return toast('Tidak ada data untuk diexport.', 'err');
+        exportCSV('analisa-customer-' + st.per, [['Grup', 'Customer', 'Nilai Pembelian (Rp)', 'Porsi (%)', 'Qty', 'SKU', 'Dokumen', 'Pertama', 'Terakhir', 'Part Terbanyak', 'Qty Part Terbanyak'], ...A.groups.flatMap(g => g.custs.map(c => [g.name, c.name, Math.round(c.val), A.tot ? Math.round(c.val / A.tot * 1000) / 10 : 0, c.qty, c.nSku, c.nDocs, fmtD(c.first), fmtD(c.last), c.top?.p.partNo || '', c.top?.qty || '']))]);
+      }
+    },
+    fill() {
+      const gs = [...new Set(S.customers.map(c => (c.group || '').trim()).filter(Boolean))].sort(byText);
+      const years = [...new Set([new Date().getFullYear(), ...S.movements.map(m => +(m.date || '').slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
+      const pe = $('#anper'); if (pe) pe.innerHTML = [['all', 'Semua waktu'], ['6m', '6 bulan terakhir'], ['12m', '12 bulan terakhir'], ...years.map(y => [String(y), 'Tahun ' + y])].map(([v, t]) => `<option value="${v}" ${st.per === v ? 'selected' : ''}>${t}</option>`).join('');
+      const ge = $('#ang'); if (ge) ge.innerHTML = '<option value="">Semua grup</option>' + gs.map(g => `<option ${g === st.grp ? 'selected' : ''}>${esc(g)}</option>`).join('') + `<option ${st.grp === 'Tanpa grup' ? 'selected' : ''}>Tanpa grup</option>`;
+      A = anGet(st);
+      $('#antabs').innerHTML = [['ringkas', 'Ringkasan'], ['grup', 'Per Grup'], ['cust', 'Per Customer'], ['part', 'Spare Part']].map(([k, t]) => `<button class="${st.tab === k ? 'on' : ''}" data-act="tab" data-id="${k}">${t}</button>`).join('');
+      $('#anb').innerHTML = !S.movements.length && loaded.movements ? empty('Belum ada transaksi.') : ({ ringkas: tabRingkas, grup: tabGrup, cust: tabCust, part: tabPart }[st.tab] || tabRingkas)();
     }
   };
 }
