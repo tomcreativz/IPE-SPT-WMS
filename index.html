@@ -2760,7 +2760,7 @@ function poDetail(id) {
     if (x === 'sapp' || x === 'sapq') { const ls = inf.lines.filter(l => l.sisa > 0); copySAP((ls.length ? ls : inf.lines).map(l => [partMap.get(l.partId)?.partNo, ls.length ? l.sisa : l.qty]), 'PO ' + po.poNo + (ls.length ? ' (sisa kirim)' : ''), x === 'sapq' ? 1 : 0); }
     if (x === 'send') {
       m.close(); F.all.dir = 'out'; location.hash = '#transaksi'; if (current && current.fill) route();
-      setTimeout(() => openTx('out', { kind: 'SOLD CUSTOMER', party: c?.name || '', poRef: po.poNo, note: 'Pengiriman PO ' + po.poNo, lines: inf.lines.filter(l => l.sisa > 0).map(l => ({ partId: l.partId, qty: Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa })) }), 60);
+      setTimeout(() => openTx('out', { kind: 'SOLD CUSTOMER', party: c?.name || '', poRef: po.poNo, lines: inf.lines.filter(l => l.sisa > 0).map(l => ({ partId: l.partId, qty: Math.min(l.sisa, Math.max(0, l.stk)) || l.sisa })) }), 60);
     }
     if (x === 'reqcancel') {
       const mm = modal(`<h3>Ajukan pembatalan PO ${esc(po.poNo)}</h3><p>PO tidak langsung dibatalkan. Pengajuan ini harus <b>dikonfirmasi Warehouseman</b>.</p><form id="rq"><div class="grid">${fld('Alasan pembatalan *', 'reason', { type: 'textarea', span: 2, attrs: 'required', ph: 'mis. customer membatalkan pesanan' })}</div><div class="actions"><button type="button" class="btn" data-x="0">Batal</button><button class="btn primary">Kirim pengajuan</button></div></form>`);
