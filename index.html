@@ -2472,7 +2472,7 @@ function viewPO() {
   let rows = [];
   return {
     shell: `${ro(true)}${loadNoteHTML}
-    <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant…" value="${esc(F.po.q)}">
+    <div class="bar"><input type="search" id="q" placeholder="Cari no. PO/QT, customer, plant, part number…" value="${esc(F.po.q)}">
       <select id="st"><option value="">Semua status</option>${['Terbuka', 'Sebagian', 'Delivery Done', 'Dibatalkan', 'Lengkap (siap picking)', 'Sudah dipacking', 'Stok kurang', 'Pengajuan batal'].map(s => `<option ${F.po.st === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
       <select id="posort" title="Urutkan daftar PO"><option value="" ${F.po.sort === '' ? 'selected' : ''}>Urutan: Terbaru</option><option value="old" ${F.po.sort === 'old' ? 'selected' : ''}>Urutan: Terlama</option><option value="hi" ${F.po.sort === 'hi' ? 'selected' : ''}>Urutan: Nilai tertinggi</option><option value="lo" ${F.po.sort === 'lo' ? 'selected' : ''}>Urutan: Nilai terendah</option></select>
       <label class="mut">Tgl PO dari <input type="date" id="pfrom" value="${esc(F.po.from)}"></label><label class="mut">sampai <input type="date" id="pto" value="${esc(F.po.to)}"></label>
@@ -2503,8 +2503,10 @@ function viewPO() {
         ...rows.flatMap(p => poInfo(p).lines.map(l => { const pt = partMap.get(l.partId) || {}; return [fmtD(p.date), poInfo(p).open ? poAge(p) : '', p.poNo, p.plant || '', pt.partNo, custMap.get(p.customerId)?.name || '', pt.location, pt.name, l.qty, l.ket === 'C' ? 'C' : (l.kurang ? -l.kurang : ''), l.free, l.stk, l.st.k === 'Terkirim' ? 'LENGKAP' : l.st.k, l.dv, l.req || '']; }))]);
     },
     fill() {
-      const q = F.po.q.toLowerCase();
-      rows = S.pos.filter(p => { const i = poInfo(p); return (!F.po.from || (p.date || '') >= F.po.from) && (!F.po.to || (p.date || '') <= F.po.to) && (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipacking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); })
+      const q = F.po.q.toLowerCase().trim(), qn = q.replace(/[^a-z0-9]/g, '');
+      /* cari juga berdasarkan part number di item PO (abaikan tanda / - spasi) */
+      const hasPart = p => qn.length >= 2 && (p.items || []).some(it => { const pt = partMap.get(it.partId); return pt && String(pt.partNo || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(qn); });
+      rows = S.pos.filter(p => { const i = poInfo(p); return (!F.po.from || (p.date || '') >= F.po.from) && (!F.po.to || (p.date || '') <= F.po.to) && (!q || (p.poNo + ' ' + (p.plant || '') + ' ' + (custMap.get(p.customerId)?.name || '')).toLowerCase().includes(q) || hasPart(p)) && (!F.po.st || (F.po.st === 'Stok kurang' ? (i.short > 0 && i.open) : F.po.st === 'Lengkap (siap picking)' ? (i.open && (!!p.picked || (i.short === 0 && i.lines.some(l => l.sisa > 0)))) : F.po.st === 'Sudah dipacking' ? (i.open && !!p.picked) : F.po.st === 'Pengajuan batal' ? (!!p.cancelReq && p.status !== 'batal') : i.st.k === F.po.st)); })
         .sort((a, b) => { const k = F.po.sort, d = (b.date + b.poNo).localeCompare(a.date + a.poNo); if (k === 'old') return -d; if (k === 'hi') return (poInfo(b).val || 0) - (poInfo(a).val || 0) || d; if (k === 'lo') return (poInfo(a).val || 0) - (poInfo(b).val || 0) || d; return d; });
       const sel = (F.po.sel = F.po.sel || new Set()); for (const i of [...sel]) if (!poMap.has(i)) sel.delete(i);
       const nDone = isFull ? S.pos.filter(p => poInfo(p).st.k === 'Delivery Done').length : 0, bk = $('#bk');
