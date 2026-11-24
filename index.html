@@ -472,6 +472,7 @@ const ROUTES = [
   ['transaksi', 'Transaksi Part In-Out', viewMoves],
   ['kartu-stok', 'Kartu Stok', viewKartu],
   ['cek-stok', 'Cek Stok', viewCek],
+  ['cek-bundling', 'Cek Stok Bundling', viewBundling],
   ['purchase-order', 'Purchase Order', viewPO],
   ['analisa-customer', 'Analisa Customer', viewAnalisa],
   ['stock-order', 'Stock Order (JCB)', viewSO],
@@ -480,7 +481,7 @@ const ROUTES = [
   ['supplier', 'Database Supplier', viewSuppliers],
   ['pengguna', 'Pengguna & Hak Akses', viewUsers, true],
 ];
-const ROLE_MENUS = { pssr: ['dashboard', 'transaksi', 'cek-stok', 'purchase-order', 'analisa-customer', 'customer'], admin: ['dashboard', 'spare-part', 'transaksi', 'kartu-stok', 'cek-stok', 'purchase-order', 'customer'] };
+const ROLE_MENUS = { pssr: ['dashboard', 'transaksi', 'cek-stok', 'cek-bundling', 'purchase-order', 'analisa-customer', 'customer'], admin: ['dashboard', 'spare-part', 'transaksi', 'kartu-stok', 'cek-stok', 'cek-bundling', 'purchase-order', 'customer'] };
 const menuOk = r => (!r[3] || isFull) && (!ROLE_MENUS[myRole] || ROLE_MENUS[myRole].includes(r[0]));
 let current = null;
 function initSidebar() {
@@ -2544,11 +2545,11 @@ function quickAddPart(partNo0, onDone) {
     if (ok) { m.close(); toast('Spare part ditambahkan'); onDone(S.parts.find(x => x.id === id) || { id, ...data }); } else er.textContent = 'Gagal menyimpan, coba lagi.';
   };
 }
-function poForm(id) {
+function poForm(id, preset = {}) {
   if (!canPO) return denied();
   if (!S.customers.length && !canCust) { toast('Tambahkan customer terlebih dahulu di menu Database Customer.', 'err'); return; }
   if (!S.parts.length) { toast('Tambahkan spare part terlebih dahulu.', 'err'); return; }
-  const po = id ? poMap.get(id) : {};
+  const po = id ? poMap.get(id) : { ...preset };
   const m = modal(`<h3>${id ? 'Edit' : 'Tambah'} PO Customer</h3><form id="pf"><div class="grid">
     ${fld('No. PO / QT *', 'poNo', { val: po.poNo || '', attrs: 'required', ph: 'mis. QT 26250061' })}
     ${fld('Customer *', 'customerId', { val: po.customerId || '', opts: [['', '— pilih customer —'], ...(canCust ? [['__new', '➕ Customer baru…']] : []), ...S.customers.slice().sort((a, b) => byText(a.name, b.name)).map(c => [c.id, c.name])], attrs: 'required' })}
@@ -2598,7 +2599,7 @@ function poForm(id) {
   function addLine(it = {}) {
     const p = it.partId ? (partMap.get(it.partId) || S.parts.find(x => x.id === it.partId)) : null;
     const d = document.createElement('div'); d.className = 'lr'; d.dataset.ket = it.ket || '';
-    d.innerHTML = `<div><input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : '')}"><small class="li mut"></small></div><input class="lq" type="number" min="0" step="any" value="${it.qty || ''}" placeholder="0"><span class="lk"></span><input class="lrq" value="${esc(it.req || '')}" placeholder="mis. SS =716/09800"><button type="button" class="btn sm" data-x="rm">×</button>`;
+    d.innerHTML = `<div><input class="lp" list="plist" placeholder="Ketik no. part / nama…" value="${esc(p ? partLabel(p) : (it.raw || ''))}"><small class="li mut"></small></div><input class="lq" type="number" min="0" step="any" value="${it.qty || ''}" placeholder="0"><span class="lk"></span><input class="lrq" value="${esc(it.req || '')}" placeholder="mis. SS =716/09800"><button type="button" class="btn sm" data-x="rm">×</button>`;
     ls.appendChild(d); info(d);
   }
   ls.addEventListener('input', e => { if (e.target.classList.contains('lp')) info(e.target.closest('.lr')); else if (e.target.classList.contains('lq')) calcKet(); });
@@ -3566,6 +3567,135 @@ function viewAnalisa() {
       $('#anb').innerHTML = !S.movements.length && loaded.movements ? empty('Belum ada transaksi.') : ({ ringkas: tabRingkas, grup: tabGrup, cust: tabCust, part: tabPart }[st.tab] || tabRingkas)();
     }
   };
+}
+
+/* ============ CEK STOK BUNDLING ============ */
+/* Paket bundling = daftar part per 1 unit. Daftar bawaan di bawah dipakai sampai Warehouseman mengeditnya;
+   setelah itu daftar disimpan di tabel settings (key 'bundling'). Stok dicek per paket (tiap paket dihitung terpisah). */
+const BD_DEFAULT = [
+  { id: 'bd-1500hm', name: 'Part bundling 1500HM 116D Vibromax', items: [['320/B4420', 'Filter engine oil', 3], ['320/A7120', 'Element Fuel Sediment Filter', 3], ['32/917804', 'Element Air outer', 3], ['320/A7170', 'Filter fuel', 1], ['333/W2655', 'Element Filter Hydraulic', 1], ['32/917805', 'Element Air inner', 1], ['32/926107', 'Element fuel filter (D Series)', 3]] },
+  { id: 'bd-3cx', name: 'New 3CX PLUS India Total 2000 Hrs', items: [['320/B4420', 'Engine Oil Filter', 4], ['320/A7120', 'Filter Element 30 Micron', 4], ['320/A7170', 'Fuel Filter 5 Micron', 2], ['32/915802', 'Air Cleaner Outer Element', 2], ['32/915801', 'Air Cleaner Inner Element', 1], ['335/Y7115', 'Filter Element Hydraulic Return', 4], ['335/Y7275', 'Strainer suction 100 micron', 1], ['335/Y7276', 'Strainer suction 100 micron', 1], ['581/M8563', 'Trans Filter', 5], ['332/A9113', 'Filter Air Cabin', 2]] },
+  { id: 'bd-3dx', name: '3DX_PM PARTS upto 2000 HRS', items: [['320/B4420', 'Oil Filter', 4], ['320/A7170', 'Fuel Filter 5 Micron', 2], ['320/A7120', 'Fuel Separator Filter 30 Micron', 4], ['32/915801', 'Air Cleaner - In', 2], ['32/915802', 'Air Cleaner - Out', 2], ['40/300893', 'Hydraulic Filter', 4], ['581/M8563', 'Transmission Filter', 4], ['335/G7504', 'Filter recirculation', 2]] }
+].map(k => ({ ...k, items: k.items.map(([partNo, desc, qty]) => ({ partNo, desc, qty })) }));
+const bdNorm = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const bdKits = () => { const it = S.settings.find(x => x.key === 'bundling'); return it && Array.isArray(it.kits) ? it.kits : BD_DEFAULT; };
+async function bdSave(kits) {
+  if (setMissing) { toast('Tabel pengaturan belum tersedia di database, paket tidak dapat disimpan.', 'err'); return false; }
+  const ex = S.settings.find(x => x.key === 'bundling');
+  const ok = await guarded(async () => { if (ex) await db.doc('settings/' + ex.id).update({ kits }); else await db.collection('settings').add({ key: 'bundling', kits }); });
+  if (ok && ex) ex.kits = kits;
+  return ok;
+}
+/* Tempel dari Excel: kolom "No" (opsional), Part Number, Description, Qty. Boleh juga satu baris: "320/A7120 Nama part 3". */
+function bdParse(txt) {
+  const merged = new Map(), bad = [];
+  for (const raw of String(txt || '').split(/\r?\n/)) {
+    const ln = raw.trim(); if (!ln || /part\s*number/i.test(ln)) continue;
+    let partNo = '', desc = '', qty = '';
+    if (raw.includes('\t')) { const c = raw.split('\t').map(x => x.trim()); if (c.length >= 4 && /^\d+$/.test(c[0])) c.shift(); partNo = c[0]; qty = c[c.length - 1]; desc = c.slice(1, -1).join(' '); }
+    else { const m = ln.match(/^(?:\d+\s+)?(\S+)\s+(.*?)\s*[,;]?\s*(\d+(?:[.,]\d+)?)$/); if (m) { partNo = m[1]; desc = m[2]; qty = m[3]; } }
+    const q = parseFloat(String(qty || '').replace(',', '.'));
+    if (!partNo || !(q > 0)) { bad.push(ln); continue; }
+    const k = bdNorm(partNo), ex = merged.get(k);
+    if (ex) ex.qty += q; else merged.set(k, { partNo: partNo.toUpperCase(), desc: desc.trim(), qty: q });
+  }
+  return { items: [...merged.values()], bad };
+}
+
+function viewBundling() {
+  const st = F.bd = F.bd || { kit: '', units: {}, basis: 'free' };
+  let IDX = new Map();
+  const curKit = () => { const ks = bdKits(); return ks.find(k => k.id === st.kit) || ks[0] || null; };
+  const unitsOf = k => { const u = st.units[k.id]; return u === undefined ? 1 : u; };
+  function calc(k) {
+    const u = Math.max(0, Math.floor(+unitsOf(k)) || 0); let maxU = Infinity, bn = [];
+    const rows = k.items.map((it, i) => {
+      const p = IDX.get(bdNorm(it.partNo)) || null, stk = p ? stock(p.id) : 0, free = p ? stk - (commit.get(p.id) || 0) : 0;
+      const av = Math.max(0, st.basis === 'stok' ? stk : free), need = it.qty * u, short = Math.max(0, need - av), mu = it.qty > 0 ? Math.floor(av / it.qty) : Infinity;
+      if (mu < maxU) { maxU = mu; bn = [it.partNo]; } else if (mu === maxU) bn.push(it.partNo);
+      return { i, it, p, stk, free, av, need, short, mu };
+    });
+    return { rows, u, maxU: rows.length ? maxU : 0, bn: rows.length ? bn : [], ok: rows.length > 0 && u > 0 && rows.every(r => r.short === 0), nShort: rows.filter(r => r.short > 0).length };
+  }
+  function kitForm(id) {
+    if (!isFull) return denied();
+    const k = id ? bdKits().find(x => x.id === id) : null;
+    const txt = k ? k.items.map(x => [x.partNo, x.desc, x.qty].join('\t')).join('\n') : '';
+    const m = modal(`<h3>${k ? 'Edit' : 'Tambah'} Paket Bundling</h3><form id="kf"><div class="grid">
+      ${fld('Nama paket *', 'name', { span: 2, val: k ? k.name : '', attrs: 'required', ph: 'mis. New 3CX PLUS India Total 2000 Hrs' })}
+      ${fld('Daftar part per 1 unit *', 'list', { type: 'textarea', span: 2, val: txt, attrs: 'spellcheck="false" style="min-height:260px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px" placeholder="Part Number [tab] Deskripsi [tab] Qty"' })}
+      </div><div class="mut" style="font-size:12.5px;margin-top:6px">Satu part per baris. Anda bisa <b>menyalin langsung dari Excel</b> (kolom Part Number, Description, Qty; kolom No boleh ikut). Part yang sama ditulis dua kali akan dijumlahkan.</div></form>
+      <div class="err" id="kerr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan paket</button></div>`, { wide: true });
+    m.el.addEventListener('click', async e => {
+      const b = e.target.closest('[data-x]'); if (!b) return;
+      if (b.dataset.x === 'c') m.close();
+      if (b.dataset.x === 's') {
+        const err = $('#kerr', m.el); err.textContent = '';
+        const f = $('#kf', m.el); if (!f.reportValidity()) return;
+        const v = Object.fromEntries(new FormData(f)), name = v.name.trim(), { items, bad } = bdParse(v.list);
+        if (bad.length) { err.textContent = `Baris tidak terbaca (butuh Part Number dan Qty di akhir baris): “${bad[0].slice(0, 60)}”${bad.length > 1 ? ` dan ${bad.length - 1} baris lain` : ''}.`; return; }
+        if (!items.length) { err.textContent = 'Isi minimal satu part.'; return; }
+        const kid = id || 'bd-' + Date.now().toString(36), kits = bdKits().map(x => ({ ...x }));
+        if (id) kits.splice(kits.findIndex(x => x.id === id), 1, { id, name, items }); else kits.push({ id: kid, name, items });
+        b.disabled = true;
+        if (await bdSave(kits)) { st.kit = kid; m.close(); toast('Paket bundling tersimpan'); curView.fill(); } else b.disabled = false;
+      }
+    });
+  }
+  const curView = {
+    shell: `${loadNoteHTML}
+    <div class="bar"><label class="mut">Jumlah unit <input type="number" id="bdu" min="0" step="1" style="width:90px"></label>
+      <label class="mut">Hitung dari <select id="bdb"><option value="free">Free (stok − PO berjalan)</option><option value="stok">Stok fisik</option></select></label>
+      <span class="grow"></span><button class="btn" data-act="csv">Export CSV</button>
+      ${canPO ? '<button class="btn primary" data-act="topo" title="Buka form PO baru berisi part paket ini × jumlah unit, grup BUNDLING">Pindahkan ke PO (Bundling)</button>' : ''}
+      ${isFull ? '<button class="btn" data-act="kadd">+ Paket baru</button><button class="btn" data-act="kedit">Edit paket</button><button class="btn danger" data-act="kdel">Hapus paket</button>' : ''}</div>
+    <p class="mut" style="margin:-4px 0 12px;font-size:12.5px">Pilih paket, isi jumlah unit yang dibutuhkan, lalu lihat apakah stok part-partnya cukup. <b>Free</b> = stok fisik dikurangi kebutuhan PO customer yang masih berjalan. Tiap paket dihitung terpisah; part yang sama di beberapa paket (mis. 320/A7120) dipakai bersama.</p>
+    <div style="overflow-x:auto;margin-bottom:14px"><div class="seg" id="bdtabs"></div></div><div id="bdc"></div>`,
+    input(e) {
+      const k = curKit(); if (!k) return;
+      if (e.target.id === 'bdu') { st.units[k.id] = e.target.value; this.fill(); }
+      if (e.target.id === 'bdb') { st.basis = e.target.value; this.fill(); }
+    },
+    act(a, id) {
+      const k = curKit();
+      if (a === 'tab') { st.kit = id; this.fill(); }
+      if (a === 'kadd') kitForm(null);
+      if (!k) return;
+      if (a === 'kedit') kitForm(k.id);
+      if (a === 'kdel') {
+        if (!isFull) return denied();
+        confirmBox(`Hapus paket “${k.name}”? Daftar part di dalamnya akan hilang.`, 'Hapus').then(async ok => { if (ok && await bdSave(bdKits().filter(x => x.id !== k.id))) { toast('Paket dihapus'); this.fill(); } });
+      }
+      if (a === 'csv') {
+        const c = calc(k);
+        exportCSV('bundling-' + k.name.replace(/[^\w]+/g, '-').slice(0, 30), [['NO', 'PART NUMBER', 'DESKRIPSI', 'BIN', 'QTY/UNIT', 'UNIT', 'BUTUH', 'STOK', 'FREE', 'KURANG'], ...c.rows.map(r => [r.i + 1, r.it.partNo, r.it.desc, r.p?.location || '', r.it.qty, c.u, r.need, r.stk, r.free, r.short])]);
+      }
+      if (a === 'topo') {
+        if (!canPO) return denied();
+        const c = calc(k); if (c.u <= 0) { toast('Isi jumlah unit lebih dari 0 dulu.', 'err'); return; }
+        const miss = c.rows.filter(r => !r.p).length;
+        if (miss) toast(`${miss} part belum ada di Database Spare Part. Di form PO, tekan “+ Tambah part baru” pada baris tersebut.`, 'err');
+        poForm(null, { plant: 'BUNDLING', note: `Bundling ${k.name} × ${c.u} unit`, items: c.rows.map(r => r.p ? { partId: r.p.id, qty: r.need } : { raw: r.it.partNo, qty: r.need }) });
+      }
+    },
+    fill() {
+      const ks = bdKits(), k = curKit(); IDX = new Map(S.parts.map(p => [bdNorm(p.partNo), p]));
+      const bi = $('#bdb'); if (bi) bi.value = st.basis;
+      $('#bdtabs').innerHTML = ks.map(x => `<button class="${k && x.id === k.id ? 'on' : ''}" data-act="tab" data-id="${esc(x.id)}">${esc(x.name)} <span class="mut">· maks ${fmtN(calc(x).maxU)} unit</span></button>`).join('');
+      const ui = $('#bdu'); if (ui && k && document.activeElement !== ui) ui.value = unitsOf(k);
+      if (!k) { $('#bdc').innerHTML = empty('Belum ada paket bundling.' + (isFull ? ' Tekan “+ Paket baru” untuk membuatnya.' : '')); return; }
+      const c = calc(k), totNeed = c.rows.reduce((s, r) => s + r.need, 0);
+      const chip = c.u <= 0 ? '' : c.ok ? `<span class="chip ok">STOK CUKUP untuk ${fmtN(c.u)} unit</span>` : `<span class="chip bad">KURANG ${fmtN(c.nShort)} part untuk ${fmtN(c.u)} unit</span>`;
+      $('#bdc').innerHTML = `<div class="card"><div class="chd"><h2>${esc(k.name)}</h2><div>${chip}</div></div>
+        <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin:8px 0 14px">
+          <div class="card stat"><small>Jumlah part per unit</small><b>${fmtN(k.items.length)}</b></div>
+          <div class="card stat hl"><small>Maks. unit yang bisa dipenuhi</small><b>${fmtN(c.maxU)}</b>${c.maxU < 1e9 && c.bn.length ? `<div class="mut" style="font-size:12px;margin-top:4px">Kendala: ${esc(c.bn.slice(0, 3).join(', '))}${c.bn.length > 3 ? '…' : ''}</div>` : ''}</div>
+          <div class="card stat"><small>Unit diminta</small><b>${fmtN(c.u)}</b></div>
+          <div class="card stat"><small>Total qty dibutuhkan</small><b>${fmtN(totNeed)}</b></div></div>
+        <div class="tw"><table><thead><tr><th class="n">No</th><th>Part number</th><th>Deskripsi</th><th>Bin</th><th class="n">Qty / unit</th><th class="n">Butuh (${fmtN(c.u)} unit)</th><th class="n">Stok</th><th class="n">Free</th><th>Status</th></tr></thead><tbody>${c.rows.map(r => `<tr ${r.short > 0 ? 'style="background:#fff5f5"' : ''}><td class="n mut">${r.i + 1}</td><td class="mono"><b>${esc(r.it.partNo)}</b></td><td>${esc(r.it.desc)}${r.p && r.p.name && bdNorm(r.p.name) !== bdNorm(r.it.desc) ? `<div class="mut" style="font-size:11.5px">${esc(r.p.name)}</div>` : ''}</td><td>${esc(r.p?.location || '')}</td><td class="n">${fmtN(r.it.qty)}</td><td class="n"><b>${fmtN(r.need)}</b></td><td class="n">${r.p ? fmtN(r.stk) : '—'}</td><td class="n" ${r.p && r.free < 0 ? 'style="color:#b91c1c;font-weight:700"' : ''}>${r.p ? fmtN(r.free) : '—'}</td><td>${!r.p ? '<span class="chip gray" title="Part number ini belum ada di Database Spare Part">TIDAK ADA DI DB</span>' : c.u <= 0 ? '<span class="mut">—</span>' : r.short > 0 ? `<span class="chip bad">KURANG ${fmtN(r.short)}</span>` : '<span class="chip ok">CUKUP</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
+    }
+  };
+  return curView;
 }
 
 /* ============ pengguna ============ */
