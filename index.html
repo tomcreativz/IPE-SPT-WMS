@@ -1104,7 +1104,7 @@ function viewMoves() {
       <button class="btn" data-act="resetf" title="Kosongkan semua filter dan pilihan">Reset</button>
       <span id="bk"></span><span class="grow"></span>
       <button class="btn" data-act="sapp" title="Salin kolom No. Part untuk ditempel di SAP">Salin Part</button><button class="btn" data-act="sapq" title="Salin kolom Qty untuk ditempel di SAP">Salin Qty</button><button class="btn" data-act="copytbl" title="Salin seluruh tabel (sesuai filter; atau hanya baris yang dicentang) untuk ditempel ke Google Sheets">📋 Salin Tabel</button><button class="btn" data-act="csv">Export CSV</button>
-      ${canWrite ? '<button class="btn" data-act="putaway">Putaway List</button><button class="btn" data-act="drafts" id="draftbtn" title="Draft Barang Masuk yang tertunda">' + draftLabel() + '</button><button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
+      ${canWrite ? '<button class="btn" data-act="putaway">Putaway List</button><button class="btn" data-act="drafts" id="draftbtn" title="Draft transaksi yang tertunda (masuk / keluar)">' + draftLabel() + '</button><button class="btn primary" data-act="addin">+ Barang Masuk</button><button class="btn primary" data-act="addout">+ Barang Keluar</button>' : ''}
     </div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) {
@@ -1136,7 +1136,7 @@ function viewMoves() {
       }
       if (a === 'clrsel') { sel.clear(); this.fill(); }
       if (a === 'addin') openTx('in');
-      if (a === 'drafts') openDrafts('in');
+      if (a === 'drafts') openDrafts();
       if (a === 'addout') openTx('out');
       if (a === 'del') delMove(id);
       if (a === 'copytbl') {
@@ -1211,21 +1211,23 @@ function nextDocNo(prefix) {
   let mx = 0; for (const m of S.movements) if ((m.docNo || '').startsWith(pre)) mx = Math.max(mx, parseInt(m.docNo.slice(pre.length), 10) || 0);
   return pre + String(mx + 1).padStart(3, '0');
 }
-/* ============ DRAFT BARANG MASUK ============ */
+/* ============ DRAFT TRANSAKSI (Barang Masuk, Barang Keluar, Barang Keluar Gabungan) ============ */
 /* Draft disimpan di browser (localStorage) per pengguna: tidak masuk database dan tidak mempengaruhi stok sampai "Simpan transaksi". */
 const DRAFT_KEY = () => 'wms.drafts.' + (uid || 'x');
 function draftLoad() { try { const a = JSON.parse(localStorage.getItem(DRAFT_KEY()) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 function draftSaveAll(a) { try { localStorage.setItem(DRAFT_KEY(), JSON.stringify(a)); return true; } catch (e) { return false; } }
-function draftList(dir) { return draftLoad().filter(d => d.dir === dir).sort((a, b) => String(b.at).localeCompare(String(a.at))); }
-const draftLabel = () => { const n = draftList('in').length; return n ? `📝 Draft (${n})` : '📝 Draft'; };
+function draftList(dir) { return draftLoad().filter(d => !dir || d.dir === dir).sort((a, b) => String(b.at).localeCompare(String(a.at))); }
+const draftLabel = () => { const n = draftList().length; return n ? `📝 Draft (${n})` : '📝 Draft'; };
 function refreshDraftBtn() { const b = document.getElementById('draftbtn'); if (b) b.textContent = draftLabel(); }
 function draftPut(d) { const a = draftLoad(), i = a.findIndex(x => x.id === d.id); if (i >= 0) a[i] = d; else a.push(d); const ok = draftSaveAll(a); refreshDraftBtn(); return ok; }
 function draftDel(id) { draftSaveAll(draftLoad().filter(x => x.id !== id)); refreshDraftBtn(); }
-function openDrafts(dir) {
+function openDrafts() {
   if (!canWrite) return denied();
-  const body = () => { const ds = draftList(dir); return `<h3>Draft Barang Masuk</h3>
-    <p class="mut" style="margin:0 0 10px;font-size:13px">Draft tersimpan di browser perangkat ini (bukan di database) dan <b>belum mengubah stok</b> sampai Anda menekan <b>Simpan transaksi</b>. Draft hanya terlihat oleh akun Anda di perangkat ini.</p>
-    ${ds.length ? `<div class="tw" style="border:0;max-height:55vh"><table><thead><tr><th>Disimpan</th><th>Tanggal</th><th>No. Dokumen</th><th>Dari</th><th>PO</th><th class="n">Baris</th><th></th></tr></thead><tbody>${ds.map(d => `<tr><td class="nw">${esc(new Date(d.at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }))}</td><td class="nw">${esc(fmtD(d.date))}</td><td>${esc(d.docNo || '—')}</td><td>${esc(d.party || '—')}</td><td>${esc(d.poRef || '—')}</td><td class="n">${fmtN((d.lines || []).filter(l => l.raw || l.q).length)}</td><td class="nw"><button class="btn sm primary" data-x="open" data-id="${esc(d.id)}">Lanjutkan</button> <button class="btn sm" data-x="del" data-id="${esc(d.id)}">Hapus</button></td></tr>`).join('')}</tbody></table></div>` : empty('Belum ada draft. Di form Barang Masuk, tekan “Simpan Draft” untuk menunda input.')}
+  const JENIS = { in: ['ok', 'Masuk'], out: ['warn', 'Keluar'], batch: ['info', 'Keluar Gabungan'] };
+  const nLines = d => d.dir === 'batch' ? (d.blocks || []).reduce((t, b) => t + (b.lines || []).length, 0) : (d.lines || []).filter(l => l.raw || l.q).length;
+  const body = () => { const ds = draftList(); return `<h3>Draft Transaksi</h3>
+    <p class="mut" style="margin:0 0 10px;font-size:13px">Draft tersimpan di browser perangkat ini (bukan di database) dan <b>belum mengubah stok</b> sampai Anda menekan tombol simpan di formnya. Draft hanya terlihat oleh akun Anda di perangkat ini.</p>
+    ${ds.length ? `<div class="tw" style="border:0;max-height:55vh"><table><thead><tr><th>Disimpan</th><th>Jenis</th><th>Tanggal</th><th>No. Dokumen</th><th>Dari / Customer</th><th>PO</th><th class="n">Baris</th><th></th></tr></thead><tbody>${ds.map(d => { const j = JENIS[d.dir] || ['gray', d.dir], bt = d.dir === 'batch', docs = (d.blocks || []).map(x => x.doc).filter(x => x && x !== SOLD_PRE()); return `<tr><td class="nw">${esc(new Date(d.at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }))}</td><td><span class="chip ${j[0]}">${esc(j[1])}</span></td><td class="nw">${esc(fmtD(d.date))}</td><td>${esc(bt ? (docs[0] ? docs[0] + (docs.length > 1 ? ' (+' + (docs.length - 1) + ')' : '') : '—') : (d.docNo || '—'))}</td><td>${esc(bt ? '—' : (d.party || '—'))}</td><td>${esc(bt ? (d.blocks || []).length + ' PO' : (d.poRef || '—'))}</td><td class="n">${fmtN(nLines(d))}</td><td class="nw"><button class="btn sm primary" data-x="open" data-id="${esc(d.id)}">Lanjutkan</button> <button class="btn sm" data-x="del" data-id="${esc(d.id)}">Hapus</button></td></tr>`; }).join('')}</tbody></table></div>` : empty('Belum ada draft. Tekan “Simpan Draft” di form Barang Masuk, Barang Keluar, atau Barang Keluar Gabungan untuk menunda input.')}
     <div class="actions"><button class="btn" data-x="c">Tutup</button></div>`; };
   const m = modal(body(), { wide: true });
   m.el.addEventListener('click', async e => {
@@ -1234,8 +1236,14 @@ function openDrafts(dir) {
     if (x === 'del') { if (await confirmBox('Hapus draft ini? Isian di dalamnya tidak bisa dikembalikan.', 'Hapus')) { draftDel(id); m.el.innerHTML = body(); } }
     if (x === 'open') {
       const d = draftLoad().find(y => y.id === id); if (!d) return;
+      if (d.dir === 'batch') {
+        const blocks = (d.blocks || []).map(bk => { const po = S.pos.find(p => p.id === bk.poId); if (!po) return null; const lines = (bk.lines || []).filter(l => partMap.has(l.partId)).map(l => ({ partId: l.partId, qty: l.q })); return lines.length ? { po, c: custMap.get(po.customerId), par: !!bk.par, doc: bk.doc, lines } : null; }).filter(Boolean);
+        if (!blocks.length) { toast('PO atau part pada draft ini sudah tidak tersedia. Hapus draft ini lalu buat ulang.', 'err'); return; }
+        m.close(); sendBatchForm(blocks, { draftId: d.id, date: d.date, kind: d.kind, ekspedisi: d.ekspedisi, awb: d.awb });
+        return;
+      }
       m.close();
-      openTx(dir, { draftId: d.id, date: d.date, docNo: d.docNo, kind: d.kind, party: d.party, ekspedisi: d.ekspedisi, poRef: d.poRef, awb: d.awb, note: d.note, lines: (d.lines || []).map(l => ({ partId: l.partId, raw: l.raw, qty: l.q, po: l.po })) });
+      openTx(d.dir, { draftId: d.id, date: d.date, docNo: d.docNo, kind: d.kind, party: d.party, ekspedisi: d.ekspedisi, poRef: d.poRef, awb: d.awb, note: d.note, lines: (d.lines || []).map(l => ({ partId: l.partId, raw: l.raw, qty: l.q, po: l.po })) });
     }
   });
 }
@@ -1257,7 +1265,7 @@ function openTx(dir, preset = {}) {
   <div class="lines tx"><div class="lh"><span>Part number</span><span>PO Cust / Req</span><span class="c">Qty</span><span class="c">Bin</span><span class="c">Stok</span><span class="c">Free</span><span></span></div><div id="ls"></div>
     <div class="mut" style="padding:8px 10px 0;font-size:12px;border-top:1px solid #f0f1f3">💡 Isi PO <b>sekali saja</b> di baris pertama. Baris di bawahnya yang kolom PO-nya dikosongkan otomatis <b>ikut PO di atasnya</b>. Isi PO lain di baris mana saja untuk memulai kelompok baru.</div><div style="padding:8px 10px;">  <button type="button" class="btn sm" data-x="addl">+ Tambah baris</button> <button type="button" class="btn sm ghost" data-x="fillpo" id="fillpo" hidden>Isi dari sisa PO / SO</button>${dir === 'in' ? ' <button type="button" class="btn sm" data-x="paste">📋 Tempel tabel dari SAP</button>' : ''}</div></div>
   </form><div class="err" id="terr"></div>
-  <div class="actions">${dir === 'in' ? '<button class="btn" data-x="draft" style="margin-right:auto" title="Simpan isian ini untuk dilanjutkan nanti (belum mengubah stok)">💾 Simpan Draft</button>' : ''}<button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan transaksi</button></div>`, { wide: true });
+  <div class="actions"><button class="btn" data-x="draft" style="margin-right:auto" title="Simpan isian ini untuk dilanjutkan nanti (belum mengubah stok)">💾 Simpan Draft</button><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan transaksi</button></div>`, { wide: true });
   const el = m.el, f = $('#tx', el), ls = $('#ls', el), E = f.elements; let draftId = preset.draftId || null;
   const findPO = () => { const v = E.poRef.value.trim().toLowerCase(); return v ? S.pos.find(p => p.poNo.toLowerCase() === v && p.status !== 'batal') : null; };
   function info(d) { const p = partFromText($('.lp', d).value), fr = p ? stock(p.id) - (commit.get(p.id) || 0) : 0; $('.lb', d).textContent = p ? (p.location || '-') : ''; $('.lk', d).textContent = p ? fmtN(stock(p.id)) : ''; const g = $('.lg', d); g.textContent = p ? fmtN(fr) : ''; g.style.color = fr < 0 ? '#b91c1c' : ''; }
@@ -2469,7 +2477,7 @@ function viewPO() {
       <select id="posort" title="Urutkan daftar PO"><option value="" ${F.po.sort === '' ? 'selected' : ''}>Urutan: Terbaru</option><option value="old" ${F.po.sort === 'old' ? 'selected' : ''}>Urutan: Terlama</option><option value="hi" ${F.po.sort === 'hi' ? 'selected' : ''}>Urutan: Nilai tertinggi</option><option value="lo" ${F.po.sort === 'lo' ? 'selected' : ''}>Urutan: Nilai terendah</option></select>
       <label class="mut">Tgl PO dari <input type="date" id="pfrom" value="${esc(F.po.from)}"></label><label class="mut">sampai <input type="date" id="pto" value="${esc(F.po.to)}"></label>
       <button class="btn" data-act="pmonth" title="Tampilkan PO bulan ini">Bulan ini</button><button class="btn" data-act="pres" title="Kosongkan pencarian dan semua filter">Reset</button>
-      <span id="bk"></span><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="pickall">Picking Gabungan</button>${canWrite ? '<button class="btn" data-act="sendall" title="Buat satu Barang Keluar dari beberapa PO">📦 Barang Keluar Gabungan</button>' : ''}${canWrite ? '<button class="btn" data-act="reqbr" title="Tanyakan part yang kurang ke cabang">📤 Minta ke Cabang</button>' : ''}${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
+      <span id="bk"></span><span class="grow"></span><button class="btn" data-act="csv">Export CSV</button><button class="btn" data-act="pickall">Picking Gabungan</button>${canWrite ? '<button class="btn" data-act="drafts" id="draftbtn" title="Draft transaksi yang tertunda">' + draftLabel() + '</button>' : ''}${canWrite ? '<button class="btn" data-act="sendall" title="Buat satu Barang Keluar dari beberapa PO">📦 Barang Keluar Gabungan</button>' : ''}${canWrite ? '<button class="btn" data-act="reqbr" title="Tanyakan part yang kurang ke cabang">📤 Minta ke Cabang</button>' : ''}${canWrite ? '<button class="btn" data-act="xpo">Impor PO dari SOH</button>' : ''}${canPO ? '<button class="btn primary" data-act="add">+ PO Customer</button>' : ''}</div>
     <div class="tw"><div id="tbl"></div></div>`,
     input(e) {
       const sel = (F.po.sel = F.po.sel || new Set());
@@ -2487,6 +2495,7 @@ function viewPO() {
       if (a === 'add') poForm();
       if (a === 'pickall') pickSelect();
       if (a === 'sendall') sendSelect();
+      if (a === 'drafts') openDrafts();
       if (a === 'reqbr') { const it = []; for (const p of rows) { const i = poInfo(p); if (i.open) for (const l of i.lines) if (l.kurang > 0) it.push({ po: p, partId: l.partId, qty: l.kurang }); } if (!it.length) { toast('Tidak ada part kurang pada PO yang tampil.', 'err'); return; } branchReqModal(it); }
       if (a === 'xpo') importPOFromSOH();
       if (a === 'view') poDetail(id);
@@ -2981,20 +2990,21 @@ function pickRows(items, g2) {
 function pickGroups(items, g2) { return items.map(it => ({ po: it.po, c: it.c, par: !!it.par, ready: it.ready, open: it.open, rows: pickRows([it], g2).map(r => ({ ...r, poNo: it.po.poNo })) })); }
 /* ===== Barang Keluar gabungan: dari beberapa PO sekaligus ===== */
 /* Satu formulir untuk banyak PO: data umum diisi sekali, hanya No. Dokumen (BPB/GI) yang diisi per PO. */
-function sendBatchForm(blocks) {
+function sendBatchForm(blocks, preset = {}) {
+  let draftId = preset.draftId || null;
   const nBlk = blocks.length, tot = blocks.reduce((t, b) => t + b.lines.length, 0);
-  const m = modal(`<h3>Barang Keluar Gabungan <span class="chip info">${nBlk} PO · ${tot} baris</span></h3>
+  const m = modal(`<h3>Barang Keluar Gabungan <span class="chip info">${nBlk} PO · ${tot} baris</span>${preset.draftId ? ' <span class="chip gray">Draft</span>' : ''}</h3>
   <p class="mut" style="margin:0 0 10px;font-size:13px">Isi data umum sekali. Tiap PO tercatat sebagai dokumen sendiri: <b>customer dan PO Cust terisi otomatis</b>, Anda hanya perlu mengisi <b>No. Dokumen (BPB/GI)</b> tiap PO.</p>
   <form id="sb"><div class="grid">
-    ${fld('Tanggal', 'date', { type: 'date', val: today(), attrs: 'required' })}
-    ${fld('FORM/TO', 'kind', { opts: OUT_TYPES.map(k => [k, k]), val: 'SOLD CUSTOMER' })}
-    ${fld('Ekspedisi', 'ekspedisi', { val: '', list: 'ekspList' })}
-    ${fld('AWB / Resi', 'awb', { val: '' })}
+    ${fld('Tanggal', 'date', { type: 'date', val: preset.date || today(), attrs: 'required' })}
+    ${fld('FORM/TO', 'kind', { opts: OUT_TYPES.map(k => [k, k]), val: preset.kind || 'SOLD CUSTOMER' })}
+    ${fld('Ekspedisi', 'ekspedisi', { val: preset.ekspedisi || '', list: 'ekspList' })}
+    ${fld('AWB / Resi', 'awb', { val: preset.awb || '' })}
   </div></form>
   <div class="sb-bar"><span class="mut" style="font-size:12.5px">Nomor dokumen tiap PO biasanya berurutan. Isi nomor pertama, lalu klik tombol ini:</span><button class="btn sm" data-x="seq">Isi nomor berurutan</button></div>
-  <div id="sbl">${blocks.map((b, i) => `<div class="sb" data-i="${i}"><div class="sb-h"><div><b class="mono">PO ${esc(b.po.poNo)}</b> ${b.par ? '<span class="chip warn">PARALEL</span>' : ''}<div class="mut" style="font-size:12.5px">${esc(b.c?.name || '')}${b.po.plant ? ' · ' + esc(b.po.plant) : ''}</div></div><label>No. Dokumen (BPB/GI)<input class="sdoc" value="${esc(SOLD_PRE())}" placeholder="mis. ${esc(SOLD_PRE())}…"></label></div>
+  <div id="sbl">${blocks.map((b, i) => `<div class="sb" data-i="${i}"><div class="sb-h"><div><b class="mono">PO ${esc(b.po.poNo)}</b> ${b.par ? '<span class="chip warn">PARALEL</span>' : ''}<div class="mut" style="font-size:12.5px">${esc(b.c?.name || '')}${b.po.plant ? ' · ' + esc(b.po.plant) : ''}</div></div><label>No. Dokumen (BPB/GI)<input class="sdoc" value="${esc(b.doc || SOLD_PRE())}" placeholder="mis. ${esc(SOLD_PRE())}…"></label></div>
     <table class="sbt"><tbody>${b.lines.map((l, k) => { const p = partMap.get(l.partId) || {}; return `<tr data-k="${k}"><td class="mono"><b>${esc(p.partNo)}</b></td><td class="sbd">${esc(p.name || '')}</td><td class="mut">${esc(p.location || '')}</td><td class="n"><input class="sq" type="number" min="0" step="any" value="${l.qty}"></td><td class="mut n">stok ${fmtN(stock(l.partId))}</td><td><button type="button" class="btn sm" data-x="rm" title="Buang baris ini">×</button></td></tr>`; }).join('')}</tbody></table></div>`).join('')}</div>
-  <div class="err" id="sberr"></div><div class="actions"><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan semua (${nBlk} dokumen)</button></div>`, { wide: true });
+  <div class="err" id="sberr"></div><div class="actions"><button class="btn" data-x="draft" style="margin-right:auto" title="Simpan isian ini untuk dilanjutkan nanti (belum mengubah stok)">💾 Simpan Draft</button><button class="btn" data-x="c">Batal</button><button class="btn primary" data-x="s">Simpan semua (${nBlk} dokumen)</button></div>`, { wide: true });
   const el = m.el, f = $('#sb', el);
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-x]'); if (!b) return; const x = b.dataset.x;
@@ -3004,6 +3014,15 @@ function sendBatchForm(blocks) {
       const ins = [...el.querySelectorAll('.sdoc')], first = ins[0].value.trim(), mt = first.match(/^(.*?)(\d+)$/);
       if (!mt) { toast('Isi dulu nomor dokumen pertama yang berakhir angka.', 'err'); return; }
       const w = mt[2].length; ins.forEach((inp, i) => { inp.value = mt[1] + String(+mt[2] + i).padStart(w, '0'); }); return;
+    }
+    if (x === 'draft') {
+      const err = $('#sberr', el); err.textContent = '';
+      const v = Object.fromEntries(new FormData(f));
+      const bl = [...el.querySelectorAll('.sb')].map(box => { const bk = blocks[+box.dataset.i]; return { poId: bk.po.id, par: !!bk.par, doc: $('.sdoc', box).value.trim(), lines: [...box.querySelectorAll('tbody tr')].map(tr => ({ partId: bk.lines[+tr.dataset.k].partId, q: $('.sq', tr).value })) }; });
+      if (!bl.length) { err.textContent = 'Tidak ada baris untuk disimpan sebagai draft.'; return; }
+      if (!draftId) draftId = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      if (!draftPut({ id: draftId, dir: 'batch', at: nowISO(), date: v.date || today(), kind: v.kind, ekspedisi: (v.ekspedisi || '').trim(), awb: (v.awb || '').trim(), blocks: bl })) { err.textContent = 'Draft gagal disimpan (penyimpanan browser penuh atau diblokir).'; return; }
+      m.close(); toast('Draft tersimpan. Buka lewat tombol “Draft” untuk melanjutkan.'); return;
     }
     if (x !== 's') return;
     const err = $('#sberr', el); err.textContent = '';
@@ -3022,7 +3041,7 @@ function sendBatchForm(blocks) {
       const t0 = Date.now(); let ln = 0;
       for (const d of docs) for (const l of d.lines) { ln++; await db.collection('movements').add({ docNo: d.doc === pre ? '' : d.doc, date: v.date, partId: l.partId, qty: l.q, dir: 'out', kind: v.kind, party: d.bk.c?.name || '', partyId: d.bk.po.customerId || '', poRef: d.bk.po.poNo, poId: d.bk.po.id, ekspedisi: (v.ekspedisi || '').trim(), awb: (v.awb || '').trim(), note: '', by: uid, ln, bt: new Date(t0).toISOString(), at: new Date(t0 + ln).toISOString() }); }
     });
-    if (ok) { m.close(); toast(`${docs.length} dokumen (${docs.reduce((t, d) => t + d.lines.length, 0)} baris) tersimpan`); } else b.disabled = false;
+    if (ok) { if (draftId) draftDel(draftId); m.close(); toast(`${docs.length} dokumen (${docs.reduce((t, d) => t + d.lines.length, 0)} baris) tersimpan`); } else b.disabled = false;
   });
 }
 function sendSelect() {
