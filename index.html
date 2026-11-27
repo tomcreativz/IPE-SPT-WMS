@@ -416,7 +416,7 @@ function pdfDoc(title, subtitle) {
   return doc;
 }
 function pdfTable(doc, startY, head, body, opts = {}) {
-  doc.autoTable({ startY, head: [head], body, styles: { fontSize: 8.5, cellPadding: 1.8 }, headStyles: { fillColor: [22, 24, 29], textColor: 255 }, margin: { left: 14, right: 14 }, ...opts });
+  doc.autoTable({ startY, head: [head], body, theme: 'grid', styles: { fontSize: 8.5, cellPadding: 1.8, lineColor: [150, 150, 150], lineWidth: 0.2 }, headStyles: { fillColor: [22, 24, 29], textColor: 255 }, margin: { left: 14, right: 14 }, ...opts });
   return doc.lastAutoTable.finalY;
 }
 const pdfSafe = s => String(s ?? '').replace(/[—–]/g, '-').replace(/[^\x20-\x7e -ÿ]/g, '');
@@ -994,7 +994,7 @@ function binCheck() {
     if (x === 'csv') exportCSV('cek-stok-bin', [['NO. PART', 'BIN', 'DESKRIPSI', 'QTY SISTEM', 'SATUAN'], ...rows.map(r => [r.part, r.bin, r.name, r.qty, r.unit])]);
     if (x === 'pdf') {
       const doc = pdfDoc('CEK STOK PER BIN', `Dicetak: ${fmtD(today())} | ${rows.length} part | ${new Set(rows.map(r => r.bin)).size} bin | Filter: ${pdfSafe($('#bq', el).value.trim() || 'semua bin')}`); if (!doc) return;
-      pdfTable(doc, 40, ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty sistem', 'Qty fisik', 'Cek'], rows.map((r, i) => [i + 1, pdfSafe(r.bin), pdfSafe(r.part), pdfSafe(r.name), q(r.qty), '', '']), { theme: 'grid', columnStyles: { 4: { halign: 'right' } }, styles: { fontSize: 8.5, cellPadding: 1.8, lineColor: [200, 200, 200], lineWidth: 0.1 } });
+      pdfTable(doc, 40, ['No', 'Bin', 'No. Part', 'Deskripsi', 'Qty sistem', 'Qty fisik', 'Cek'], rows.map((r, i) => [i + 1, pdfSafe(r.bin), pdfSafe(r.part), pdfSafe(r.name), q(r.qty), '', '']), { columnStyles: { 4: { halign: 'right' } } });
       saveFile(`cek-stok-bin-${today()}.pdf`, doc.output('blob'));
     }
   });
@@ -2271,6 +2271,7 @@ function kartuPDF(p, rows) {
     const bot = ty + 5 + Math.max(chunk.length, 1) * RH;
     doc.setDrawColor(205).setLineWidth(0.12);
     for (let k = 1; k < 6; k++) doc.line(xs[k], ty + 5, xs[k], bot);
+    for (let k = 0; k <= Math.max(chunk.length, 1); k++) doc.line(x + 3, ty + 5 + k * RH, x + PW - 3, ty + 5 + k * RH);   // garis antar baris
     doc.line(x + 3, ty + 5, x + 3, bot); doc.line(x + PW - 3, ty + 5, x + PW - 3, bot);
     doc.setDrawColor(95, 110, 145).setLineWidth(0.12); for (let k = 1; k < 6; k++) doc.line(xs[k], ty + 0.8, xs[k], ty + 4.2);
     doc.setDrawColor(225).setLineWidth(0.15).line(x + 3, ty + 5 + Math.max(chunk.length, 1) * RH, x + PW - 3, ty + 5 + Math.max(chunk.length, 1) * RH);
